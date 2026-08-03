@@ -103,13 +103,13 @@ export default function ChatSidebar({
 
     // connect socket
 
-    // if (!socket.connected) {
-    //   socket.connect();
-    // }
+    if (!socket.connected) {
+      socket.connect();
+    }
 
-    // // join current user
+    // join current user
 
-    // socket.emit("join-user", currentUserId);
+    socket.emit("join-user", currentUserId);
 
     // =====================================================
     // RECEIVE MESSAGE
@@ -183,16 +183,16 @@ export default function ChatSidebar({
 
     // socket.on("receive-message", receiveMessage);
 
-    // socket.on("user-online", userOnline);
+    socket.on("user-online", userOnline);
 
-    // socket.on("user-offline", userOffline);
+    socket.on("user-offline", userOffline);
 
     return () => {
-      // socket.off("receive-message", receiveMessage);
+      socket.off("receive-message", receiveMessage);
 
-      // socket.off("user-online", userOnline);
+      socket.off("user-online", userOnline);
 
-      // socket.off("user-offline", userOffline);
+      socket.off("user-offline", userOffline);
     };
   }, [currentUserId]);
   // =====================================================
