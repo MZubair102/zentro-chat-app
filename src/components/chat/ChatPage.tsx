@@ -22,8 +22,7 @@ export default function ChatPage() {
 
   const [loadingUser, setLoadingUser] = useState(true);
 
-  const [selectedConversation, setSelectedConversation] =
-    useState<any>(null);
+  const [selectedConversation, setSelectedConversation] = useState<any>(null);
 
   useEffect(() => {
     const loadCurrentUser = async () => {
@@ -54,22 +53,31 @@ export default function ChatPage() {
   useEffect(() => {
     if (!user?._id) return;
 
-    socket.connect();
+    const joinUser = () => {
+      console.log("Socket connected:", socket.id);
 
-    socket.emit("join-user", user._id);
+      socket.emit("join-user", user._id);
+    };
+
+    if (!socket.connected) {
+      socket.connect();
+    }
+
+    if (socket.connected) {
+      socket.emit("join-user", user._id);
+    } else {
+      socket.once("connect", joinUser);
+    }
 
     return () => {
-      socket.emit("leave-user", user._id);
-      socket.disconnect();
+      socket.off("connect", joinUser);
     };
   }, [user?._id]);
 
   if (loadingUser) {
     return (
       <main className="flex h-screen items-center justify-center bg-gray-100">
-        <div className="text-sm text-gray-500">
-          Loading chat...
-        </div>
+        <div className="text-sm text-gray-500">Loading chat...</div>
       </main>
     );
   }
@@ -100,9 +108,7 @@ export default function ChatPage() {
               Select a conversation
             </h2>
 
-            <p className="mt-1 text-sm">
-              Choose a chat to start messaging.
-            </p>
+            <p className="mt-1 text-sm">Choose a chat to start messaging.</p>
           </div>
         )}
       </section>

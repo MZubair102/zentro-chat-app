@@ -97,19 +97,12 @@ export default function ChatSidebar({
   // =====================================================
 
   useEffect(() => {
-    // if (!currentUserId) return;
+
 
     loadConversations();
 
     // connect socket
 
-    if (!socket.connected) {
-      socket.connect();
-    }
-
-    // join current user
-
-    socket.emit("join-user", currentUserId);
 
     // =====================================================
     // RECEIVE MESSAGE
@@ -181,7 +174,7 @@ export default function ChatSidebar({
       );
     };
 
-    // socket.on("receive-message", receiveMessage);
+    socket.on("receive-message", receiveMessage);
 
     socket.on("user-online", userOnline);
 

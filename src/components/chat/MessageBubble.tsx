@@ -1,193 +1,268 @@
+
+"use client";
+
 interface Props {
-message: any;
-own: boolean;
+  message: any;
+  own: boolean;
 }
 
 export default function MessageBubble({
-message,
-own,
+  message,
+  own,
 }: Props) {
-// =====================================================
-// CHECK MESSAGE STATUS
-// =====================================================
+  // =====================================================
+  // MESSAGE STATUS
+  // =====================================================
 
-const seenBy = Array.isArray(message.seenBy)
-? message.seenBy
-: [];
+  const seenBy = Array.isArray(message.seenBy)
+    ? message.seenBy
+    : [];
 
-const isSeen = seenBy.length > 1;
+  const senderId = String(
+    message.sender?._id || message.sender || "",
+  );
 
-// =====================================================
-// CHECK EMOJI ONLY
-// =====================================================
+  // Check whether someone other than sender
+  // has seen the message.
+  const isSeen = seenBy.some((user: any) => {
+    const userId = String(
+      user?._id || user || "",
+    );
 
-const text = message.text || "";
+    return userId !== senderId;
+  });
 
-const emojiOnlyRegex =
-/^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D|\s)+$/u;
+  // Delivered:
+  // If message exists in receiver's chat through socket,
+  // ChatWindow can mark it as delivered.
+  const isDelivered =
+    message.delivered === true ||
+    isSeen;
 
-const isEmojiOnly =
-text.trim().length > 0 &&
-emojiOnlyRegex.test(text.trim());
+  // =====================================================
+  // CHECK EMOJI ONLY
+  // =====================================================
 
-// =====================================================
-// FORMAT TIME
-// =====================================================
+  const text = message.text || "";
 
-const time = message.createdAt
-? new Date(
-message.createdAt
-).toLocaleTimeString("en-US", {
-hour: "numeric",
-minute: "2-digit",
-hour12: true,
-})
-: "";
+  const emojiOnlyRegex =
+    /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D|\s)+$/u;
 
-// =====================================================
-// MESSAGE CONTENT
-// =====================================================
+  const isEmojiOnly =
+    text.trim().length > 0 &&
+    emojiOnlyRegex.test(text.trim());
 
-const renderContent = () => {
-// Image
-if (
-message.messageType === "image" &&
-message.attachments?.length
-) {
-return ( <div className="space-y-2">
-{message.attachments.map(
-(file: any, index: number) => (
-<img
-key={index}
-src={file.url}
-alt={file.name || "Image"}
-className="max-h-80 max-w-full rounded-xl object-cover"
-/>
-)
-)}
+  // =====================================================
+  // FORMAT TIME
+  // =====================================================
 
-```
-      {text && (
-        <p className="whitespace-pre-wrap text-sm leading-6">
+  const time = message.createdAt
+    ? new Date(
+        message.createdAt,
+      ).toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      })
+    : "";
+
+  // =====================================================
+  // MESSAGE CONTENT
+  // =====================================================
+
+  const renderContent = () => {
+    // ===================================================
+    // IMAGE
+    // ===================================================
+
+    if (
+      message.messageType === "image" &&
+      message.attachments?.length
+    ) {
+      return (
+        <div className="space-y-2">
+          {message.attachments.map(
+            (file: any, index: number) => (
+              <img
+                key={index}
+                src={file.url}
+                alt={file.name || "Image"}
+                className="max-h-80 max-w-full rounded-xl object-cover"
+              />
+            ),
+          )}
+
+          {text && (
+            <p className="whitespace-pre-wrap text-sm leading-6">
+              {text}
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    // ===================================================
+    // FILE
+    // ===================================================
+
+    if (
+      message.messageType === "file" &&
+      message.attachments?.length
+    ) {
+      return (
+        <div className="space-y-2">
+          {message.attachments.map(
+            (file: any, index: number) => (
+              <a
+                key={index}
+                href={file.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`block rounded-lg px-3 py-2 text-sm underline ${
+                  own
+                    ? "bg-white/10 text-white"
+                    : "bg-gray-100 text-gray-700"
+                }`}
+              >
+                📎{" "}
+                {file.name || "Download file"}
+              </a>
+            ),
+          )}
+
+          {text && (
+            <p className="whitespace-pre-wrap text-sm leading-6">
+              {text}
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    // ===================================================
+    // EMOJI ONLY
+    // ===================================================
+
+    if (isEmojiOnly) {
+      return (
+        <span className="block text-[42px] leading-[1.1]">
           {text}
-        </p>
-      )}
-    </div>
-  );
-}
+        </span>
+      );
+    }
 
-// File
-if (
-  message.messageType === "file" &&
-  message.attachments?.length
-) {
+    // ===================================================
+    // NORMAL TEXT
+    // ===================================================
+
+    return (
+      <p className="whitespace-pre-wrap text-sm leading-6">
+        {text}
+      </p>
+    );
+  };
+
+  // =====================================================
+  // MESSAGE STATUS
+  // =====================================================
+
+  const renderStatus = () => {
+    if (!own) {
+      return null;
+    }
+
+    // ================================================
+    // SEEN
+    // ================================================
+
+    if (isSeen) {
+      return (
+        <span
+          className="text-[13px] font-semibold leading-none text-blue-500"
+          title="Seen"
+        >
+          ✓✓
+        </span>
+      );
+    }
+
+    // ================================================
+    // DELIVERED
+    // ================================================
+
+    if (isDelivered) {
+      return (
+        <span
+          className="text-[13px] font-semibold leading-none text-gray-400"
+          title="Delivered"
+        >
+          ✓✓
+        </span>
+      );
+    }
+
+    // ================================================
+    // SENT
+    // ================================================
+
+    return (
+      <span
+        className="text-[13px] font-semibold leading-none text-gray-400"
+        title="Sent"
+      >
+        ✓
+      </span>
+    );
+  };
+
+  // =====================================================
+  // RETURN
+  // =====================================================
+
   return (
-    <div className="space-y-2">
-      {message.attachments.map(
-        (file: any, index: number) => (
-          <a
-            key={index}
-            href={file.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className={`block rounded-lg px-3 py-2 text-sm underline ${
-              own
-                ? "bg-white/10 text-white"
-                : "bg-gray-100 text-gray-700"
-            }`}
-          >
-            📎 {file.name || "Download file"}
-          </a>
-        )
-      )}
-
-      {text && (
-        <p className="whitespace-pre-wrap text-sm leading-6">
-          {text}
-        </p>
-      )}
-    </div>
-  );
-}
-
-// Emoji only
-if (isEmojiOnly) {
-  return (
-    <span className="block text-[42px] leading-[1.1]">
-      {text}
-    </span>
-  );
-}
-
-// Normal text
-return (
-  <p className="whitespace-pre-wrap text-sm leading-6">
-    {text}
-  </p>
-);
-
-};
-
-return (
-<div
-className={`flex ${
+    <div
+      className={`flex ${
         own
           ? "justify-end"
           : "justify-start"
       }`}
->
-<div
-className={`max-w-[70%] ${
+    >
+      <div
+        className={`max-w-[70%] ${
           isEmojiOnly
             ? "px-1 py-1"
             : `rounded-2xl px-4 py-3 ${
-own
-? "rounded-br-md bg-[#0E1320] text-white"
-: "rounded-bl-md bg-white text-gray-800 shadow-sm"
-}`
-        }`}
->
-{renderContent()}
-
-
-    {/* Time + ticks */}
-    <div
-      className={`mt-1 flex items-center justify-end gap-1 ${
-        isEmojiOnly
-          ? "px-1"
-          : ""
-      }`}
-    >
-      <span
-        className={`text-[10px] ${
-          own
-            ? "text-gray-400"
-            : "text-gray-400"
+                own
+                  ? "rounded-br-md bg-[#0E1320] text-white"
+                  : "rounded-bl-md bg-white text-gray-800 shadow-sm"
+              }`
         }`}
       >
-        {time}
-      </span>
+        {/* MESSAGE */}
 
-      {/* Blue / gray ticks */}
-      {own && (
-        <span
-          className={`text-[13px] font-semibold leading-none ${
-            isSeen
-              ? "text-blue-500"
-              : "text-gray-400"
+        {renderContent()}
+
+        {/* TIME + STATUS */}
+
+        <div
+          className={`mt-1 flex items-center justify-end gap-1 ${
+            isEmojiOnly
+              ? "px-1"
+              : ""
           }`}
-          title={
-            isSeen
-              ? "Seen"
-              : "Sent"
-          }
         >
-          {isSeen
-            ? "✓✓"
-            : "✓"}
-        </span>
-      )}
+          {/* TIME */}
+
+          <span className="text-[10px] text-gray-400">
+            {time}
+          </span>
+
+          {/* STATUS */}
+
+          {renderStatus()}
+        </div>
+      </div>
     </div>
-  </div>
-</div>
-)}
+  );
+}
+
