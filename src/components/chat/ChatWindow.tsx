@@ -1,4 +1,3 @@
-
 "use client";
 
 import {
@@ -27,26 +26,17 @@ export default function ChatWindow({
   conversation,
   currentUserId,
 }: Props) {
-  const [messages, setMessages] = useState<any[]>([]);
+  const [messages, setMessages] =
+    useState<any[]>([]);
 
   const [typingUser, setTypingUser] =
     useState<string | null>(null);
 
-  // =====================================================
-  // AUTO SCROLL
-  // =====================================================
-
-  const messagesEndRef =
+  const messagesContainerRef =
     useRef<HTMLDivElement | null>(null);
 
-  const scrollToBottom = (
-    behavior: ScrollBehavior = "smooth",
-  ) => {
-    messagesEndRef.current?.scrollIntoView({
-      behavior,
-      block: "end",
-    });
-  };
+  const shouldScrollRef =
+    useRef(true);
 
   // =====================================================
   // OTHER USER
@@ -63,7 +53,7 @@ export default function ChatWindow({
     otherUser?._id?.toString();
 
   // =====================================================
-  // USER STATUS
+  // STATUS
   // =====================================================
 
   const [otherUserStatus, setOtherUserStatus] =
@@ -79,7 +69,7 @@ export default function ChatWindow({
     );
 
   // =====================================================
-  // UPDATE USER STATUS
+  // UPDATE STATUS WHEN CONVERSATION CHANGES
   // =====================================================
 
   useEffect(() => {
@@ -99,30 +89,608 @@ export default function ChatWindow({
   ]);
 
   // =====================================================
-  // FORMAT LAST SEEN
+  // AUTO SCROLL
+  // =====================================================
+
+  const scrollToBottom = (
+    behavior: ScrollBehavior = "smooth",
+  ) => {
+    const container =
+      messagesContainerRef.current;
+
+    if (!container) return;
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior,
+    });
+  };
+
+  // =====================================================
+  // LOAD MESSAGES
+  // =====================================================
+
+  useEffect(() => {
+    if (!conversation?._id) {
+      return;
+    }
+
+    let mounted = true;
+
+    const conversationId =
+      String(conversation._id);
+
+    const loadMessages = async () => {
+      try {
+        const res = await fetch(
+          `/api/messages/${conversationId}`,
+          {
+            method: "GET",
+            credentials: "include",
+            cache: "no-store",
+          },
+        );
+
+        const data = await res.json();
+
+        if (
+          mounted &&
+          data.success
+        ) {
+          const loaded =
+            Array.isArray(data.data)
+              ? data.data
+              : [];
+
+          setMessages(loaded);
+
+          shouldScrollRef.current =
+            true;
+
+          setTimeout(() => {
+            scrollToBottom("auto");
+          }, 50);
+        }
+      } catch (error) {
+        console.error(
+          "Load messages error:",
+          error,
+        );
+      }
+    };
+
+    loadMessages();
+
+    // ===================================================
+    // JOIN CONVERSATION
+    // ===================================================
+
+    socket.emit(
+      "join-conversation",
+      conversationId,
+    );
+
+    // ===================================================
+    // RECEIVE MESSAGE
+    // ===================================================
+
+    const receiveMessage = (
+      message: any,
+    ) => {
+      if (
+        String(
+          message.conversationId,
+        ) !== conversationId
+      ) {
+        return;
+      }
+
+      setMessages((prev) => {
+        const exists = prev.some(
+          (item) =>
+            String(item._id) ===
+            String(message._id),
+        );
+
+        if (exists) {
+          return prev;
+        }
+
+        return [
+          ...prev,
+          message,
+        ];
+      });
+
+      shouldScrollRef.current =
+        true;
+    };
+
+    // ===================================================
+    // DELIVERED
+    // ===================================================
+
+    const handleMessageDelivered = ({
+      conversationId:
+        eventConversationId,
+      messageId,
+      userId,
+    }: {
+      conversationId: string;
+      messageId: string;
+      userId: string;
+    }) => {
+      if (
+        String(eventConversationId) !==
+        conversationId
+      ) {
+        return;
+      }
+
+      setMessages((prev) =>
+        prev.map((message) => {
+          if (
+            String(message._id) !==
+            String(messageId)
+          ) {
+            return message;
+          }
+
+          const currentDeliveredBy =
+            Array.isArray(
+              message.deliveredBy,
+            )
+              ? message.deliveredBy
+              : [];
+
+          const exists =
+            currentDeliveredBy.some(
+              (id: any) =>
+                String(
+                  id?._id || id,
+                ) === String(userId),
+            );
+
+          if (exists) {
+            return message;
+          }
+
+          return {
+            ...message,
+            deliveredBy: [
+              ...currentDeliveredBy,
+              userId,
+            ],
+          };
+        }),
+      );
+    };
+
+    // ===================================================
+    // SEEN
+    // ===================================================
+
+    const handleMessageSeen = ({
+      conversationId:
+        eventConversationId,
+      messageId,
+      userId,
+    }: {
+      conversationId: string;
+      messageId: string;
+      userId: string;
+    }) => {
+      if (
+        String(eventConversationId) !==
+        conversationId
+      ) {
+        return;
+      }
+
+      setMessages((prev) =>
+        prev.map((message) => {
+          if (
+            String(message._id) !==
+            String(messageId)
+          ) {
+            return message;
+          }
+
+          const currentSeenBy =
+            Array.isArray(
+              message.seenBy,
+            )
+              ? message.seenBy
+              : [];
+
+          const exists =
+            currentSeenBy.some(
+              (id: any) =>
+                String(
+                  id?._id || id,
+                ) === String(userId),
+            );
+
+          if (exists) {
+            return message;
+          }
+
+          return {
+            ...message,
+
+            seenBy: [
+              ...currentSeenBy,
+              userId,
+            ],
+          };
+        }),
+      );
+    };
+
+    // ===================================================
+    // TYPING
+    // ===================================================
+
+    const userTyping = ({
+      conversationId:
+        typingConversationId,
+      userId,
+    }: any) => {
+      if (
+        String(
+          typingConversationId,
+        ) !== conversationId
+      ) {
+        return;
+      }
+
+      if (
+        String(userId) ===
+        String(currentUserId)
+      ) {
+        return;
+      }
+
+      setTypingUser(userId);
+    };
+
+    // ===================================================
+    // STOP TYPING
+    // ===================================================
+
+    const userStopTyping = ({
+      conversationId:
+        typingConversationId,
+    }: any) => {
+      if (
+        String(
+          typingConversationId,
+        ) === conversationId
+      ) {
+        setTypingUser(null);
+      }
+    };
+
+    // ===================================================
+    // SOCKET LISTENERS
+    // ===================================================
+
+    socket.on(
+      "receive-message",
+      receiveMessage,
+    );
+
+    socket.on(
+      "message-delivered",
+      handleMessageDelivered,
+    );
+
+    socket.on(
+      "message-seen",
+      handleMessageSeen,
+    );
+
+    socket.on(
+      "user-typing",
+      userTyping,
+    );
+
+    socket.on(
+      "user-stop-typing",
+      userStopTyping,
+    );
+
+    // ===================================================
+    // CLEANUP
+    // ===================================================
+
+    return () => {
+      mounted = false;
+
+      socket.emit(
+        "leave-conversation",
+        conversationId,
+      );
+
+      socket.off(
+        "receive-message",
+        receiveMessage,
+      );
+
+      socket.off(
+        "message-delivered",
+        handleMessageDelivered,
+      );
+
+      socket.off(
+        "message-seen",
+        handleMessageSeen,
+      );
+
+      socket.off(
+        "user-typing",
+        userTyping,
+      );
+
+      socket.off(
+        "user-stop-typing",
+        userStopTyping,
+      );
+
+      setTypingUser(null);
+    };
+  }, [
+    conversation?._id,
+    currentUserId,
+  ]);
+
+  // =====================================================
+  // AUTO SCROLL WHEN MESSAGES CHANGE
+  // =====================================================
+
+  useEffect(() => {
+    if (!shouldScrollRef.current) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      scrollToBottom("smooth");
+    }, 50);
+
+    return () => clearTimeout(timer);
+  }, [messages.length]);
+
+  // =====================================================
+  // MARK RECEIVED MESSAGES AS SEEN
+  // =====================================================
+
+  useEffect(() => {
+    if (
+      !conversation?._id ||
+      !currentUserId ||
+      !messages.length
+    ) {
+      return;
+    }
+
+    const conversationId =
+      String(conversation._id);
+
+    const unreadMessages =
+      messages.filter((message) => {
+        const senderId = String(
+          message.sender?._id ||
+            message.sender ||
+            "",
+        );
+
+        // Own messages ko seen nahi karna
+        if (
+          senderId ===
+          String(currentUserId)
+        ) {
+          return false;
+        }
+
+        const seenBy =
+          Array.isArray(
+            message.seenBy,
+          )
+            ? message.seenBy
+            : [];
+
+        const alreadySeen =
+          seenBy.some(
+            (id: any) =>
+              String(
+                id?._id || id,
+              ) ===
+              String(currentUserId),
+          );
+
+        return !alreadySeen;
+      });
+
+    if (!unreadMessages.length) {
+      return;
+    }
+
+    unreadMessages.forEach(
+      (message) => {
+        socket.emit(
+          "message-seen",
+          {
+            conversationId,
+            messageId:
+              message._id,
+            userId:
+              currentUserId,
+          },
+        );
+      },
+    );
+  }, [
+    messages,
+    conversation?._id,
+    currentUserId,
+  ]);
+
+  // =====================================================
+  // SEND MESSAGE
+  // =====================================================
+
+  const sendMessage = async (
+    text: string,
+  ) => {
+    const cleanText =
+      text.trim();
+
+    if (!cleanText) {
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `/api/messages/${conversation._id}`,
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          credentials: "include",
+
+          body: JSON.stringify({
+            text: cleanText,
+            messageType: "text",
+          }),
+        },
+      );
+
+      const data = await res.json();
+
+      if (
+        !res.ok ||
+        !data.success
+      ) {
+        alert(
+          data.message ||
+            "Failed to send message.",
+        );
+
+        return;
+      }
+
+      const message =
+        data.data;
+
+      // ------------------------------------------
+      // LOCAL MESSAGE
+      // ------------------------------------------
+
+      setMessages((prev) => {
+        const exists = prev.some(
+          (item) =>
+            String(item._id) ===
+            String(message._id),
+        );
+
+        if (exists) {
+          return prev;
+        }
+
+        return [
+          ...prev,
+          message,
+        ];
+      });
+
+      shouldScrollRef.current =
+        true;
+
+      // ------------------------------------------
+      // SOCKET
+      // ------------------------------------------
+
+      socket.emit(
+        "send-message",
+        {
+          conversationId:
+            conversation._id,
+          message,
+        },
+      );
+    } catch (error) {
+      console.error(
+        "Send message error:",
+        error,
+      );
+
+      alert(
+        "Failed to send message.",
+      );
+    }
+  };
+
+  // =====================================================
+  // CONVERSATION NAME
+  // =====================================================
+
+  const conversationName =
+    conversation.type === "group"
+      ? conversation.name ||
+        "Group"
+      : otherUser?.name ||
+        "Conversation";
+
+  // =====================================================
+  // AVATAR
+  // =====================================================
+
+  const conversationAvatar =
+    conversation.type === "group"
+      ? conversation.image
+      : otherUser?.avatar;
+
+  // =====================================================
+  // LAST SEEN
   // =====================================================
 
   const formatLastSeen = (
-    date: string | Date | null | undefined,
+    date:
+      | string
+      | Date
+      | null
+      | undefined,
   ) => {
     if (!date) {
       return "last seen recently";
     }
 
-    const lastSeen = new Date(date);
+    const lastSeen =
+      new Date(date);
 
-    if (Number.isNaN(lastSeen.getTime())) {
+    if (
+      Number.isNaN(
+        lastSeen.getTime(),
+      )
+    ) {
       return "last seen recently";
     }
 
     const now = new Date();
 
     const time =
-      lastSeen.toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      });
+      lastSeen.toLocaleTimeString(
+        "en-US",
+        {
+          hour: "numeric",
+          minute: "2-digit",
+          hour12: true,
+        },
+      );
 
     if (
       lastSeen.toDateString() ===
@@ -131,7 +699,8 @@ export default function ChatWindow({
       return `last seen today at ${time}`;
     }
 
-    const yesterday = new Date(now);
+    const yesterday =
+      new Date(now);
 
     yesterday.setDate(
       now.getDate() - 1,
@@ -154,7 +723,7 @@ export default function ChatWindow({
   };
 
   // =====================================================
-  // LIVE ONLINE / OFFLINE
+  // LIVE USER STATUS
   // =====================================================
 
   useEffect(() => {
@@ -224,629 +793,6 @@ export default function ChatWindow({
   }, [otherUserId]);
 
   // =====================================================
-  // LOAD + LIVE MESSAGES
-  // =====================================================
-
-  useEffect(() => {
-    if (!conversation?._id) {
-      return;
-    }
-
-    let mounted = true;
-
-    const conversationId =
-      conversation._id.toString();
-
-    // ===================================================
-    // LOAD MESSAGES
-    // ===================================================
-
-    const loadMessages = async () => {
-      try {
-        const res = await fetch(
-          `/api/messages/${conversationId}`,
-          {
-            method: "GET",
-            credentials: "include",
-            cache: "no-store",
-          },
-        );
-
-        const data = await res.json();
-
-        if (
-          !mounted ||
-          !data.success
-        ) {
-          return;
-        }
-
-        const loadedMessages =
-          Array.isArray(data.data)
-            ? data.data
-            : [];
-
-        setMessages(loadedMessages);
-
-        // -----------------------------------------------
-        // LOADED RECEIVED MESSAGES = DELIVERED
-        // -----------------------------------------------
-
-        loadedMessages.forEach(
-          (message: any) => {
-            const senderId =
-              message.sender?._id ||
-              message.sender;
-
-            // Apna message skip
-            if (
-              String(senderId) ===
-              String(currentUserId)
-            ) {
-              return;
-            }
-
-            const deliveredBy =
-              Array.isArray(
-                message.deliveredBy,
-              )
-                ? message.deliveredBy
-                : [];
-
-            const alreadyDelivered =
-              deliveredBy.some(
-                (id: any) =>
-                  String(
-                    id?._id || id,
-                  ) ===
-                  String(currentUserId),
-              );
-
-            if (!alreadyDelivered) {
-              socket.emit(
-                "message-delivered",
-                {
-                  conversationId,
-                  messageId:
-                    message._id,
-                  userId:
-                    currentUserId,
-                },
-              );
-            }
-          },
-        );
-
-        // Scroll after messages load
-        setTimeout(() => {
-          scrollToBottom("auto");
-        }, 50);
-      } catch (error) {
-        console.error(
-          "Load messages error:",
-          error,
-        );
-      }
-    };
-
-    // ===================================================
-    // JOIN CONVERSATION
-    // ===================================================
-
-    socket.emit(
-      "join-conversation",
-      conversationId,
-    );
-
-    // ===================================================
-    // RECEIVE MESSAGE
-    // ===================================================
-
-    const receiveMessage = (
-      message: any,
-    ) => {
-      if (
-        String(
-          message.conversationId,
-        ) !==
-        String(conversationId)
-      ) {
-        return;
-      }
-
-      setMessages((prev) => {
-        const exists = prev.some(
-          (item) =>
-            String(item._id) ===
-            String(message._id),
-        );
-
-        if (exists) {
-          return prev;
-        }
-
-        return [
-          ...prev,
-          message,
-        ];
-      });
-
-      // -----------------------------------------------
-      // RECEIVER = DELIVERED
-      // -----------------------------------------------
-
-      const senderId =
-        message.sender?._id ||
-        message.sender;
-
-      if (
-        String(senderId) !==
-        String(currentUserId)
-      ) {
-        socket.emit(
-          "message-delivered",
-          {
-            conversationId,
-            messageId:
-              message._id,
-            userId:
-              currentUserId,
-          },
-        );
-      }
-
-      // Scroll new message
-      setTimeout(() => {
-        scrollToBottom("smooth");
-      }, 30);
-    };
-
-    // ===================================================
-    // MESSAGE DELIVERED
-    // ===================================================
-
-    const handleMessageDelivered = ({
-      messageId,
-      userId,
-    }: {
-      messageId: string;
-      userId: string;
-    }) => {
-      setMessages((prev) =>
-        prev.map((message) => {
-          if (
-            String(message._id) !==
-            String(messageId)
-          ) {
-            return message;
-          }
-
-          const currentDeliveredBy =
-            Array.isArray(
-              message.deliveredBy,
-            )
-              ? message.deliveredBy
-              : [];
-
-          const exists =
-            currentDeliveredBy.some(
-              (id: any) =>
-                String(
-                  id?._id || id,
-                ) ===
-                String(userId),
-            );
-
-          if (exists) {
-            return message;
-          }
-
-          return {
-            ...message,
-            deliveredBy: [
-              ...currentDeliveredBy,
-              userId,
-            ],
-          };
-        }),
-      );
-    };
-
-    // ===================================================
-    // MESSAGE SEEN
-    // ===================================================
-
-    const handleMessageSeen = ({
-      messageId,
-      userId,
-    }: {
-      messageId: string;
-      userId: string;
-    }) => {
-      setMessages((prev) =>
-        prev.map((message) => {
-          if (
-            String(message._id) !==
-            String(messageId)
-          ) {
-            return message;
-          }
-
-          const currentSeenBy =
-            Array.isArray(
-              message.seenBy,
-            )
-              ? message.seenBy
-              : [];
-
-          const exists =
-            currentSeenBy.some(
-              (id: any) =>
-                String(
-                  id?._id || id,
-                ) ===
-                String(userId),
-            );
-
-          if (exists) {
-            return message;
-          }
-
-          return {
-            ...message,
-
-            seenBy: [
-              ...currentSeenBy,
-              userId,
-            ],
-
-            // Seen = Delivered bhi
-            deliveredBy: (() => {
-              const currentDeliveredBy =
-                Array.isArray(
-                  message.deliveredBy,
-                )
-                  ? message.deliveredBy
-                  : [];
-
-              const deliveredExists =
-                currentDeliveredBy.some(
-                  (id: any) =>
-                    String(
-                      id?._id || id,
-                    ) ===
-                    String(userId),
-                );
-
-              return deliveredExists
-                ? currentDeliveredBy
-                : [
-                    ...currentDeliveredBy,
-                    userId,
-                  ];
-            })(),
-          };
-        }),
-      );
-    };
-
-    // ===================================================
-    // TYPING
-    // ===================================================
-
-    const userTyping = ({
-      conversationId:
-        typingConversationId,
-      userId,
-    }: any) => {
-      if (
-        String(
-          typingConversationId,
-        ) !==
-        String(conversationId)
-      ) {
-        return;
-      }
-
-      if (
-        String(userId) ===
-        String(currentUserId)
-      ) {
-        return;
-      }
-
-      setTypingUser(userId);
-    };
-
-    const userStopTyping = ({
-      conversationId:
-        typingConversationId,
-    }: any) => {
-      if (
-        String(
-          typingConversationId,
-        ) ===
-        String(conversationId)
-      ) {
-        setTypingUser(null);
-      }
-    };
-
-    // ===================================================
-    // SOCKET LISTENERS
-    // ===================================================
-
-    socket.on(
-      "receive-message",
-      receiveMessage,
-    );
-
-    socket.on(
-      "message-delivered",
-      handleMessageDelivered,
-    );
-
-    socket.on(
-      "message-seen",
-      handleMessageSeen,
-    );
-
-    socket.on(
-      "user-typing",
-      userTyping,
-    );
-
-    socket.on(
-      "user-stop-typing",
-      userStopTyping,
-    );
-
-    // ===================================================
-    // LOAD
-    // ===================================================
-
-    loadMessages();
-
-    // ===================================================
-    // CLEANUP
-    // ===================================================
-
-    return () => {
-      mounted = false;
-
-      socket.emit(
-        "leave-conversation",
-        conversationId,
-      );
-
-      socket.off(
-        "receive-message",
-        receiveMessage,
-      );
-
-      socket.off(
-        "message-delivered",
-        handleMessageDelivered,
-      );
-
-      socket.off(
-        "message-seen",
-        handleMessageSeen,
-      );
-
-      socket.off(
-        "user-typing",
-        userTyping,
-      );
-
-      socket.off(
-        "user-stop-typing",
-        userStopTyping,
-      );
-    };
-  }, [
-    conversation?._id,
-    currentUserId,
-  ]);
-
-  // =====================================================
-  // MARK RECEIVED MESSAGES AS SEEN
-  // =====================================================
-
-  useEffect(() => {
-    if (
-      !conversation?._id ||
-      !currentUserId ||
-      !messages.length
-    ) {
-      return;
-    }
-
-    const conversationId =
-      conversation._id.toString();
-
-    messages.forEach((message) => {
-      const senderId =
-        message.sender?._id ||
-        message.sender;
-
-      // Apna message skip
-      if (
-        String(senderId) ===
-        String(currentUserId)
-      ) {
-        return;
-      }
-
-      const seenBy =
-        Array.isArray(message.seenBy)
-          ? message.seenBy
-          : [];
-
-      const alreadySeen =
-        seenBy.some(
-          (id: any) =>
-            String(
-              id?._id || id,
-            ) ===
-            String(currentUserId),
-        );
-
-      if (alreadySeen) {
-        return;
-      }
-
-      // -----------------------------------------------
-      // MESSAGE SEEN
-      // -----------------------------------------------
-
-      socket.emit(
-        "message-seen",
-        {
-          conversationId,
-          messageId:
-            message._id,
-          userId:
-            currentUserId,
-        },
-      );
-    });
-  }, [
-    messages,
-    conversation?._id,
-    currentUserId,
-  ]);
-
-  // =====================================================
-  // AUTO SCROLL WHEN MESSAGES CHANGE
-  // =====================================================
-
-  useEffect(() => {
-    if (!messages.length) {
-      return;
-    }
-
-    setTimeout(() => {
-      scrollToBottom("smooth");
-    }, 30);
-  }, [messages.length]);
-
-  // =====================================================
-  // SEND MESSAGE
-  // =====================================================
-
-  const sendMessage = async (
-    text: string,
-  ) => {
-    const cleanText =
-      text.trim();
-
-    if (!cleanText) {
-      return;
-    }
-
-    try {
-      const res = await fetch(
-        `/api/messages/${conversation._id}`,
-        {
-          method: "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          credentials: "include",
-
-          body: JSON.stringify({
-            text: cleanText,
-            messageType: "text",
-          }),
-        },
-      );
-
-      const data =
-        await res.json();
-
-      if (
-        !res.ok ||
-        !data.success
-      ) {
-        alert(
-          data.message ||
-            "Failed to send message.",
-        );
-
-        return;
-      }
-
-      const message =
-        data.data;
-
-      // Local message
-      setMessages((prev) => {
-        const exists = prev.some(
-          (item) =>
-            String(item._id) ===
-            String(message._id),
-        );
-
-        if (exists) {
-          return prev;
-        }
-
-        return [
-          ...prev,
-          message,
-        ];
-      });
-
-      // Socket
-      socket.emit(
-        "send-message",
-        {
-          conversationId:
-            conversation._id,
-          message,
-        },
-      );
-
-      setTimeout(() => {
-        scrollToBottom("smooth");
-      }, 30);
-    } catch (error) {
-      console.error(
-        "Send message error:",
-        error,
-      );
-
-      alert(
-        "Failed to send message.",
-      );
-    }
-  };
-
-  // =====================================================
-  // CONVERSATION NAME
-  // =====================================================
-
-  const conversationName =
-    conversation.type === "group"
-      ? conversation.name ||
-        "Group"
-      : otherUser?.name ||
-        "Conversation";
-
-  // =====================================================
-  // AVATAR
-  // =====================================================
-
-  const conversationAvatar =
-    conversation.type === "group"
-      ? conversation.image
-      : otherUser?.avatar;
-
-  // =====================================================
   // UI
   // =====================================================
 
@@ -856,6 +802,7 @@ export default function ChatWindow({
       {/* HEADER */}
 
       <header className="flex h-[76px] shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
+
         <div className="flex items-center gap-3">
 
           <div className="relative shrink-0">
@@ -940,17 +887,30 @@ export default function ChatWindow({
       {/* MESSAGES */}
 
       <div
+        ref={messagesContainerRef}
         className="min-h-0 flex-1 overflow-y-auto p-6"
-        id="chat-messages"
-      >
-        {messages.length === 0 ? (
-          <div className="flex h-full items-center justify-center text-sm text-gray-400">
-            No messages yet.
-          </div>
-        ) : (
-          <div className="space-y-3">
+        onScroll={() => {
+          const container =
+            messagesContainerRef.current;
 
-            {messages.map(
+          if (!container) return;
+
+          const distanceFromBottom =
+            container.scrollHeight -
+            container.scrollTop -
+            container.clientHeight;
+
+          shouldScrollRef.current =
+            distanceFromBottom < 100;
+        }}
+      >
+        <div className="space-y-3">
+          {messages.length === 0 ? (
+            <div className="flex h-full min-h-[300px] items-center justify-center text-sm text-gray-400">
+              No messages yet.
+            </div>
+          ) : (
+            messages.map(
               (message) => (
                 <MessageBubble
                   key={message._id}
@@ -958,7 +918,8 @@ export default function ChatWindow({
                   own={
                     String(
                       message.sender?._id ||
-                        message.sender,
+                        message.sender ||
+                        "",
                     ) ===
                     String(
                       currentUserId,
@@ -966,22 +927,15 @@ export default function ChatWindow({
                   }
                 />
               ),
-            )}
+            )
+          )}
 
-            {typingUser && (
-              <div className="text-sm text-gray-400">
-                Typing...
-              </div>
-            )}
-
-            {/* SCROLL TARGET */}
-
-            <div
-              ref={messagesEndRef}
-              className="h-px"
-            />
-          </div>
-        )}
+          {typingUser && (
+            <div className="text-sm text-gray-400">
+              Typing...
+            </div>
+          )}
+        </div>
       </div>
 
       {/* INPUT */}
@@ -1000,4 +954,3 @@ export default function ChatWindow({
     </div>
   );
 }
-
