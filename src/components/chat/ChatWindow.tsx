@@ -1,3 +1,4 @@
+
 "use client";
 
 import {
@@ -26,21 +27,31 @@ export default function ChatWindow({
   conversation,
   currentUserId,
 }: Props) {
-  const [messages, setMessages] =
-    useState<any[]>([]);
+  const [messages, setMessages] = useState<any[]>([]);
 
   const [typingUser, setTypingUser] =
     useState<string | null>(null);
 
   // =====================================================
-  // SCROLL REF
+  // AUTO SCROLL
   // =====================================================
 
   const messagesContainerRef =
     useRef<HTMLDivElement | null>(null);
 
-  const bottomRef =
-    useRef<HTMLDivElement | null>(null);
+  const scrollToBottom = (
+    behavior: ScrollBehavior = "smooth",
+  ) => {
+    const container =
+      messagesContainerRef.current;
+
+    if (!container) return;
+
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior,
+    });
+  };
 
   // =====================================================
   // OTHER USER
@@ -57,24 +68,20 @@ export default function ChatWindow({
     otherUser?._id?.toString();
 
   // =====================================================
-  // LIVE USER STATUS
+  // USER STATUS
   // =====================================================
 
-  const [
-    otherUserStatus,
-    setOtherUserStatus,
-  ] = useState<"online" | "offline">(
-    otherUser?.status === "online"
-      ? "online"
-      : "offline",
-  );
+  const [otherUserStatus, setOtherUserStatus] =
+    useState<"online" | "offline">(
+      otherUser?.status === "online"
+        ? "online"
+        : "offline",
+    );
 
-  const [
-    otherUserLastSeen,
-    setOtherUserLastSeen,
-  ] = useState<string | null>(
-    otherUser?.lastSeen || null,
-  );
+  const [otherUserLastSeen, setOtherUserLastSeen] =
+    useState<string | null>(
+      otherUser?.lastSeen || null,
+    );
 
   // =====================================================
   // UPDATE STATUS WHEN CONVERSATION CHANGES
@@ -97,30 +104,11 @@ export default function ChatWindow({
   ]);
 
   // =====================================================
-  // SCROLL TO BOTTOM
-  // =====================================================
-
-  const scrollToBottom = (
-    behavior: ScrollBehavior = "smooth",
-  ) => {
-    requestAnimationFrame(() => {
-      bottomRef.current?.scrollIntoView({
-        behavior,
-        block: "end",
-      });
-    });
-  };
-
-  // =====================================================
   // FORMAT LAST SEEN
   // =====================================================
 
   const formatLastSeen = (
-    date:
-      | string
-      | Date
-      | null
-      | undefined,
+    date: string | Date | null | undefined,
   ) => {
     if (!date) {
       return "last seen recently";
@@ -128,11 +116,7 @@ export default function ChatWindow({
 
     const lastSeen = new Date(date);
 
-    if (
-      Number.isNaN(
-        lastSeen.getTime(),
-      )
-    ) {
+    if (Number.isNaN(lastSeen.getTime())) {
       return "last seen recently";
     }
 
@@ -159,8 +143,7 @@ export default function ChatWindow({
 
     // YESTERDAY
 
-    const yesterday =
-      new Date(now);
+    const yesterday = new Date(now);
 
     yesterday.setDate(
       now.getDate() - 1,
@@ -189,11 +172,7 @@ export default function ChatWindow({
   // =====================================================
 
   useEffect(() => {
-    if (!otherUserId) {
-      return;
-    }
-
-    // USER ONLINE
+    if (!otherUserId) return;
 
     const handleUserOnline = ({
       userId,
@@ -210,8 +189,6 @@ export default function ChatWindow({
       setOtherUserStatus("online");
       setOtherUserLastSeen(null);
     };
-
-    // USER OFFLINE
 
     const handleUserOffline = ({
       userId,
@@ -263,14 +240,12 @@ export default function ChatWindow({
   // =====================================================
 
   useEffect(() => {
-    if (!conversation?._id) {
-      return;
-    }
+    if (!conversation?._id) return;
 
     let mounted = true;
 
     const conversationId =
-      String(conversation._id);
+      conversation._id.toString();
 
     // ===================================================
     // LOAD MESSAGES
@@ -287,8 +262,7 @@ export default function ChatWindow({
           },
         );
 
-        const data =
-          await res.json();
+        const data = await res.json();
 
         if (
           mounted &&
@@ -303,10 +277,55 @@ export default function ChatWindow({
             loadedMessages,
           );
 
-          // Wait for messages to render
-          setTimeout(() => {
-            scrollToBottom("auto");
-          }, 50);
+          // ---------------------------------------------
+          // IMPORTANT:
+          // Existing incoming messages ko delivered mark
+          // karo agar current user receiver hai.
+          // ---------------------------------------------
+
+          loadedMessages.forEach(
+            (message: any) => {
+              const senderId =
+                message.sender?._id ||
+                message.sender;
+
+              if (
+                String(senderId) ===
+                String(currentUserId)
+              ) {
+                return;
+              }
+
+              const deliveredBy =
+                Array.isArray(
+                  message.deliveredBy,
+                )
+                  ? message.deliveredBy
+                  : [];
+
+              const alreadyDelivered =
+                deliveredBy.some(
+                  (id: any) =>
+                    String(
+                      id?._id || id,
+                    ) ===
+                    String(currentUserId),
+                );
+
+              if (!alreadyDelivered) {
+                socket.emit(
+                  "message-delivered",
+                  {
+                    conversationId,
+                    messageId:
+                      message._id,
+                    userId:
+                      currentUserId,
+                  },
+                );
+              }
+            },
+          );
         }
       } catch (error) {
         console.error(
@@ -316,8 +335,6 @@ export default function ChatWindow({
       }
     };
 
-    loadMessages();
-
     // ===================================================
     // JOIN CONVERSATION
     // ===================================================
@@ -326,6 +343,9 @@ export default function ChatWindow({
       "join-conversation",
       conversationId,
     );
+
+    // Load after joining room
+    loadMessages();
 
     // ===================================================
     // RECEIVE MESSAGE
@@ -344,12 +364,11 @@ export default function ChatWindow({
       }
 
       setMessages((prev) => {
-        const exists =
-          prev.some(
-            (item) =>
-              String(item._id) ===
-              String(message._id),
-          );
+        const exists = prev.some(
+          (item) =>
+            String(item._id) ===
+            String(message._id),
+        );
 
         if (exists) {
           return prev;
@@ -361,10 +380,107 @@ export default function ChatWindow({
         ];
       });
 
-      // New message -> bottom
+      // -----------------------------------------------
+      // IMPORTANT:
+      // Agar message kisi aur ne bheja hai,
+      // current user receiver hai.
+      // Message delivered mark karo.
+      // -----------------------------------------------
+
+      const senderId =
+        message.sender?._id ||
+        message.sender;
+
+      if (
+        String(senderId) !==
+        String(currentUserId)
+      ) {
+        const deliveredBy =
+          Array.isArray(
+            message.deliveredBy,
+          )
+            ? message.deliveredBy
+            : [];
+
+        const alreadyDelivered =
+          deliveredBy.some(
+            (id: any) =>
+              String(
+                id?._id || id,
+              ) ===
+              String(currentUserId),
+          );
+
+        if (!alreadyDelivered) {
+          socket.emit(
+            "message-delivered",
+            {
+              conversationId,
+              messageId:
+                message._id,
+              userId:
+                currentUserId,
+            },
+          );
+        }
+      }
+
+      // Scroll after new message
       setTimeout(() => {
         scrollToBottom("smooth");
       }, 50);
+    };
+
+    // ===================================================
+    // MESSAGE DELIVERED
+    // ===================================================
+
+    const handleMessageDelivered = ({
+      messageId,
+      userId,
+    }: {
+      messageId: string;
+      userId: string;
+    }) => {
+      setMessages((prev) =>
+        prev.map((message) => {
+          if (
+            String(message._id) !==
+            String(messageId)
+          ) {
+            return message;
+          }
+
+          const currentDeliveredBy =
+            Array.isArray(
+              message.deliveredBy,
+            )
+              ? message.deliveredBy
+              : [];
+
+          const alreadyDelivered =
+            currentDeliveredBy.some(
+              (id: any) =>
+                String(
+                  id?._id || id,
+                ) ===
+                String(userId),
+            );
+
+          if (alreadyDelivered) {
+            return message;
+          }
+
+          return {
+            ...message,
+
+            deliveredBy: [
+              ...currentDeliveredBy,
+              userId,
+            ],
+          };
+        }),
+      );
     };
 
     // ===================================================
@@ -445,11 +561,6 @@ export default function ChatWindow({
       }
 
       setTypingUser(userId);
-
-      // Typing indicator also stays at bottom
-      setTimeout(() => {
-        scrollToBottom("smooth");
-      }, 50);
     };
 
     // ===================================================
@@ -477,6 +588,11 @@ export default function ChatWindow({
     socket.on(
       "receive-message",
       receiveMessage,
+    );
+
+    socket.on(
+      "message-delivered",
+      handleMessageDelivered,
     );
 
     socket.on(
@@ -512,6 +628,11 @@ export default function ChatWindow({
       );
 
       socket.off(
+        "message-delivered",
+        handleMessageDelivered,
+      );
+
+      socket.off(
         "message-seen",
         handleMessageSeen,
       );
@@ -532,26 +653,19 @@ export default function ChatWindow({
   ]);
 
   // =====================================================
-  // AUTO SCROLL WHEN MESSAGE LIST CHANGES
+  // AUTO SCROLL WHEN MESSAGES CHANGE
   // =====================================================
 
   useEffect(() => {
-    if (!messages.length) {
-      return;
-    }
+    const timer = setTimeout(() => {
+      scrollToBottom("auto");
+    }, 50);
 
-    scrollToBottom("smooth");
-  }, [messages.length]);
-
-  // =====================================================
-  // AUTO SCROLL WHEN TYPING CHANGES
-  // =====================================================
-
-  useEffect(() => {
-    if (typingUser) {
-      scrollToBottom("smooth");
-    }
-  }, [typingUser]);
+    return () => clearTimeout(timer);
+  }, [
+    conversation?._id,
+    messages.length,
+  ]);
 
   // =====================================================
   // MARK RECEIVED MESSAGES AS SEEN
@@ -573,7 +687,6 @@ export default function ChatWindow({
             message.sender?._id ||
             message.sender;
 
-          // Don't mark own messages
           if (
             String(senderId) ===
             String(currentUserId)
@@ -610,15 +723,11 @@ export default function ChatWindow({
           "message-seen",
           {
             conversationId:
-              String(
-                conversation._id,
-              ),
-
+              conversation._id,
             messageId:
-              String(message._id),
-
+              message._id,
             userId:
-              String(currentUserId),
+              currentUserId,
           },
         );
       },
@@ -681,17 +790,16 @@ export default function ChatWindow({
       const message =
         data.data;
 
-      // =================================================
-      // ADD MESSAGE LOCALLY
-      // =================================================
+      // -----------------------------------------------
+      // Add locally immediately
+      // -----------------------------------------------
 
       setMessages((prev) => {
-        const exists =
-          prev.some(
-            (item) =>
-              String(item._id) ===
-              String(message._id),
-          );
+        const exists = prev.some(
+          (item) =>
+            String(item._id) ===
+            String(message._id),
+        );
 
         if (exists) {
           return prev;
@@ -703,25 +811,22 @@ export default function ChatWindow({
         ];
       });
 
-      // =================================================
-      // SEND THROUGH SOCKET
-      // =================================================
+      // -----------------------------------------------
+      // Socket
+      // -----------------------------------------------
 
       socket.emit(
         "send-message",
         {
           conversationId:
-            String(
-              conversation._id,
-            ),
-
+            conversation._id,
           message,
         },
       );
 
-      // =================================================
-      // FORCE BOTTOM AFTER SEND
-      // =================================================
+      // -----------------------------------------------
+      // Scroll down
+      // -----------------------------------------------
 
       setTimeout(() => {
         scrollToBottom("smooth");
@@ -764,12 +869,15 @@ export default function ChatWindow({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[#f8f9fb]">
+
       {/* ================================================= */}
       {/* HEADER */}
       {/* ================================================= */}
 
       <header className="flex h-[76px] shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
+
         <div className="flex items-center gap-3">
+
           {/* AVATAR */}
 
           <div className="relative shrink-0">
@@ -787,7 +895,7 @@ export default function ChatWindow({
               </div>
             )}
 
-            {/* ONLINE / OFFLINE DOT */}
+            {/* ONLINE DOT */}
 
             {conversation.type ===
               "private" && (
@@ -836,25 +944,23 @@ export default function ChatWindow({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="grid h-10 w-10 place-items-center rounded-xl transition hover:bg-gray-100"
+            className="grid h-10 w-10 place-items-center rounded-xl hover:bg-gray-100"
           >
             <Phone size={18} />
           </button>
 
           <button
             type="button"
-            className="grid h-10 w-10 place-items-center rounded-xl transition hover:bg-gray-100"
+            className="grid h-10 w-10 place-items-center rounded-xl hover:bg-gray-100"
           >
             <Video size={18} />
           </button>
 
           <button
             type="button"
-            className="grid h-10 w-10 place-items-center rounded-xl transition hover:bg-gray-100"
+            className="grid h-10 w-10 place-items-center rounded-xl hover:bg-gray-100"
           >
-            <MoreVertical
-              size={18}
-            />
+            <MoreVertical size={18} />
           </button>
         </div>
       </header>
@@ -865,72 +971,59 @@ export default function ChatWindow({
 
       <div
         ref={messagesContainerRef}
-        className="min-h-0 flex-1 overflow-y-auto p-6"
+        className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6"
       >
-        <div className="space-y-3">
-          {messages.length === 0 ? (
-            <div className="flex min-h-[calc(100vh-200px)] items-center justify-center text-sm text-gray-400">
-              No messages yet.
-            </div>
-          ) : (
-            messages.map(
-              (message) => (
-                <MessageBubble
-                  key={message._id}
-                  message={message}
-                  own={
-                    String(
-                      message.sender
-                        ?._id ||
-                        message.sender,
-                    ) ===
-                    String(
-                      currentUserId,
-                    )
-                  }
-                />
-              ),
-            )
-          )}
+        {messages.length === 0 ? (
+          <div className="flex h-full items-center justify-center text-sm text-gray-400">
+            No messages yet.
+          </div>
+        ) : (
+          messages.map(
+            (message) => (
+              <MessageBubble
+                key={message._id}
+                message={message}
+                own={
+                  String(
+                    message.sender?._id ||
+                      message.sender,
+                  ) ===
+                  String(currentUserId)
+                }
+              />
+            ),
+          )
+        )}
 
-          {/* TYPING */}
+        {/* TYPING */}
 
-          {typingUser && (
-            <div className="flex items-center gap-2 text-sm text-gray-400">
-              <span>Typing</span>
+        {typingUser && (
+          <div className="text-sm text-gray-400">
+            Typing...
+          </div>
+        )}
 
-              <span className="flex gap-1">
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.3s]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400 [animation-delay:-0.15s]" />
-                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-400" />
-              </span>
-            </div>
-          )}
+        {/* SCROLL TARGET */}
 
-          {/* =================================================
-              BOTTOM SCROLL ANCHOR
-          ================================================= */}
-
-          <div
-            ref={bottomRef}
-            className="h-px w-full"
-          />
-        </div>
+        <div className="h-px" />
       </div>
 
       {/* ================================================= */}
-      {/* MESSAGE INPUT */}
+      {/* INPUT */}
       {/* ================================================= */}
 
-      <MessageInput
-        conversationId={
-          conversation._id
-        }
-        currentUserId={
-          currentUserId
-        }
-        onSend={sendMessage}
-      />
+      <div className="shrink-0">
+        <MessageInput
+          conversationId={
+            conversation._id
+          }
+          currentUserId={
+            currentUserId
+          }
+          onSend={sendMessage}
+        />
+      </div>
     </div>
   );
 }
+

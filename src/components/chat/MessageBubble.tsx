@@ -1,4 +1,3 @@
-
 "use client";
 
 interface Props {
@@ -11,33 +10,42 @@ export default function MessageBubble({
   own,
 }: Props) {
   // =====================================================
-  // MESSAGE STATUS
+  // MESSAGE IDS
+  // =====================================================
+
+  const senderId = String(
+    message.sender?._id || message.sender || "",
+  );
+
+  // =====================================================
+  // DELIVERED BY
+  // =====================================================
+
+  const deliveredBy = Array.isArray(message.deliveredBy)
+    ? message.deliveredBy
+    : [];
+
+  const isDelivered = deliveredBy.some((user: any) => {
+    const userId = String(user?._id || user || "");
+
+    // Sender ko delivered count nahi karna
+    return userId !== senderId;
+  });
+
+  // =====================================================
+  // SEEN BY
   // =====================================================
 
   const seenBy = Array.isArray(message.seenBy)
     ? message.seenBy
     : [];
 
-  const senderId = String(
-    message.sender?._id || message.sender || "",
-  );
-
-  // Check whether someone other than sender
-  // has seen the message.
   const isSeen = seenBy.some((user: any) => {
-    const userId = String(
-      user?._id || user || "",
-    );
+    const userId = String(user?._id || user || "");
 
+    // Sender ko seen count nahi karna
     return userId !== senderId;
   });
-
-  // Delivered:
-  // If message exists in receiver's chat through socket,
-  // ChatWindow can mark it as delivered.
-  const isDelivered =
-    message.delivered === true ||
-    isSeen;
 
   // =====================================================
   // CHECK EMOJI ONLY
@@ -57,9 +65,7 @@ export default function MessageBubble({
   // =====================================================
 
   const time = message.createdAt
-    ? new Date(
-        message.createdAt,
-      ).toLocaleTimeString("en-US", {
+    ? new Date(message.createdAt).toLocaleTimeString("en-US", {
         hour: "numeric",
         minute: "2-digit",
         hour12: true,
@@ -124,8 +130,7 @@ export default function MessageBubble({
                     : "bg-gray-100 text-gray-700"
                 }`}
               >
-                📎{" "}
-                {file.name || "Download file"}
+                📎 {file.name || "Download file"}
               </a>
             ),
           )}
@@ -171,9 +176,9 @@ export default function MessageBubble({
       return null;
     }
 
-    // ================================================
+    // ===================================================
     // SEEN
-    // ================================================
+    // ===================================================
 
     if (isSeen) {
       return (
@@ -186,9 +191,9 @@ export default function MessageBubble({
       );
     }
 
-    // ================================================
+    // ===================================================
     // DELIVERED
-    // ================================================
+    // ===================================================
 
     if (isDelivered) {
       return (
@@ -201,9 +206,9 @@ export default function MessageBubble({
       );
     }
 
-    // ================================================
+    // ===================================================
     // SENT
-    // ================================================
+    // ===================================================
 
     return (
       <span
@@ -222,9 +227,7 @@ export default function MessageBubble({
   return (
     <div
       className={`flex ${
-        own
-          ? "justify-end"
-          : "justify-start"
+        own ? "justify-end" : "justify-start"
       }`}
     >
       <div
@@ -246,9 +249,7 @@ export default function MessageBubble({
 
         <div
           className={`mt-1 flex items-center justify-end gap-1 ${
-            isEmojiOnly
-              ? "px-1"
-              : ""
+            isEmojiOnly ? "px-1" : ""
           }`}
         >
           {/* TIME */}
@@ -265,4 +266,3 @@ export default function MessageBubble({
     </div>
   );
 }
-

@@ -10,6 +10,7 @@ import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 
 import Conversation from "@/models/Conversation";
+import Message from "@/models/Message";
 
 const dev = process.env.NODE_ENV !== "production";
 
@@ -118,58 +119,51 @@ app.prepare().then(() => {
     // ============================================
 
     // ============================================
-// SEND MESSAGE
-// ============================================
+    // SEND MESSAGE
+    // ============================================
 
-socket.on(
-  "send-message",
-  async ({ conversationId, message }) => {
-    try {
-      await connectDB();
+    socket.on("send-message", async ({ conversationId, message }) => {
+      try {
+        await connectDB();
 
-      // ------------------------------------------
-      // SEND TO OPEN CHAT WINDOW
-      // ------------------------------------------
+        // ------------------------------------------
+        // SEND TO OPEN CHAT WINDOW
+        // ------------------------------------------
 
-      io.to(`conversation:${conversationId}`).emit(
-        "receive-message",
-        message,
-      );
+        io.to(`conversation:${conversationId}`).emit(
+          "receive-message",
+          message,
+        );
 
-      // ------------------------------------------
-      // FIND CONVERSATION PARTICIPANTS
-      // ------------------------------------------
+        // ------------------------------------------
+        // FIND CONVERSATION PARTICIPANTS
+        // ------------------------------------------
 
-      const conversation =
-        await Conversation.findById(conversationId)
+        const conversation = await Conversation.findById(conversationId)
           .select("participants")
           .lean();
 
-      if (!conversation) {
-        return;
-      }
+        if (!conversation) {
+          return;
+        }
 
-      // ------------------------------------------
-      // UPDATE SIDEBAR FOR ALL PARTICIPANTS
-      // ------------------------------------------
+        // ------------------------------------------
+        // UPDATE SIDEBAR FOR ALL PARTICIPANTS
+        // ------------------------------------------
 
-      for (const participantId of conversation.participants) {
-        io.to(`user:${participantId.toString()}`).emit(
-          "conversation-message",
-          {
-            conversationId: conversationId.toString(),
-            message,
-          },
-        );
+        for (const participantId of conversation.participants) {
+          io.to(`user:${participantId.toString()}`).emit(
+            "conversation-message",
+            {
+              conversationId: conversationId.toString(),
+              message,
+            },
+          );
+        }
+      } catch (error) {
+        console.error("Send message socket error:", error);
       }
-    } catch (error) {
-      console.error(
-        "Send message socket error:",
-        error,
-      );
-    }
-  },
-);
+    });
 
     // ============================================
     // MESSAGE SEEN
@@ -181,6 +175,36 @@ socket.on(
         userId,
       });
     });
+
+    socket.on(
+      "message-delivered",
+      async ({ conversationId, messageId, userId }) => {
+        try {
+          await connectDB();
+
+          const message = await Message.findById(messageId);
+
+          if (!message) return;
+
+          const alreadyDelivered = message.deliveredBy.some(
+            (id: any) => String(id) === String(userId),
+          );
+
+          if (!alreadyDelivered) {
+            message.deliveredBy.push(userId);
+
+            await message.save();
+          }
+
+          io.to(`conversation:${conversationId}`).emit("message-delivered", {
+            messageId,
+            userId,
+          });
+        } catch (error) {
+          console.error("Message delivered error:", error);
+        }
+      },
+    );
 
     // ============================================
     // DISCONNECT
@@ -226,5 +250,5 @@ socket.on(
 
   httpServer.listen(port, () => {
     console.log(`> Ready on http://${hostname}:${port}`);
-  });  
+  });
 });

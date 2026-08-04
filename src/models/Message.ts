@@ -45,6 +45,13 @@ const MessageSchema =
           ref: "User",
         },
       ],
+      deliveredBy: [
+  {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+  },
+],
+
 
       deleted: {
         type: Boolean,
