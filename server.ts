@@ -50,52 +50,232 @@ app.prepare().then(() => {
   const onlineUsers = new Map<string, Set<string>>();
 
   // =====================================================
+  // DELIVER PENDING MESSAGES
+  // =====================================================
+  //
+  // Jab receiver offline tha aur baad mein login karta hai,
+  // us waqt uske pending messages ko delivered karna hai.
+  //
+  // Iske liye conversation open hona zaroori nahi.
+  //
+  // =====================================================
+
+  const deliverPendingMessages = async (
+    receiverId: string,
+  ) => {
+    try {
+      await connectDB();
+
+      const normalizedReceiverId =
+        String(receiverId);
+
+      // -----------------------------------------------
+      // Receiver ki conversations
+      // -----------------------------------------------
+
+      const conversations =
+        await Conversation.find({
+          participants: normalizedReceiverId,
+        })
+          .select("_id")
+          .lean();
+
+      if (!conversations.length) {
+        return;
+      }
+
+      const conversationIds =
+        conversations.map((conversation) =>
+          conversation._id,
+        );
+
+      // -----------------------------------------------
+      // Pending messages
+      //
+      // Receiver sender nahi hona chahiye
+      // deliveredBy mein receiver nahi hona chahiye
+      // -----------------------------------------------
+
+      const pendingMessages =
+        await Message.find({
+          conversationId: {
+            $in: conversationIds,
+          },
+
+          sender: {
+            $ne: normalizedReceiverId,
+          },
+
+          deliveredBy: {
+            $ne: normalizedReceiverId,
+          },
+        })
+          .select(
+            "_id conversationId sender",
+          )
+          .lean();
+
+      if (!pendingMessages.length) {
+        console.log(
+          `NO PENDING MESSAGES FOR: ${normalizedReceiverId}`,
+        );
+
+        return;
+      }
+
+      // -----------------------------------------------
+      // Har pending message ko delivered karo
+      // -----------------------------------------------
+
+      for (const message of pendingMessages) {
+        const messageId =
+          String(message._id);
+
+        const conversationId =
+          String(message.conversationId);
+
+        const senderId =
+          String(message.sender);
+
+        // ---------------------------------------------
+        // DB: deliveredBy add
+        // ---------------------------------------------
+
+        await Message.findByIdAndUpdate(
+          message._id,
+          {
+            $addToSet: {
+              deliveredBy:
+                normalizedReceiverId,
+            },
+          },
+        );
+
+        // ---------------------------------------------
+        // Sender ko live event
+        // ---------------------------------------------
+
+        io.to(`user:${senderId}`).emit(
+          "message-delivered",
+          {
+            conversationId,
+            messageId,
+            userId:
+              normalizedReceiverId,
+          },
+        );
+
+        console.log(
+          `PENDING MESSAGE DELIVERED: ${messageId} -> ${normalizedReceiverId}`,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Deliver pending messages error:",
+        error,
+      );
+    }
+  };
+
+  // =====================================================
   // CONNECTION
   // =====================================================
 
   io.on("connection", (socket) => {
-    console.log("Socket Connected:", socket.id);
+    console.log(
+      "Socket Connected:",
+      socket.id,
+    );
 
     // ===================================================
     // USER CONNECT
     // ===================================================
 
-    socket.on("join-user", async (userId: string) => {
-      try {
-        await connectDB();
+    socket.on(
+      "join-user",
+      async (userId: string) => {
+        try {
+          await connectDB();
 
-        const normalizedUserId = String(userId);
+          const normalizedUserId =
+            String(userId);
 
-        socket.data.userId = normalizedUserId;
+          socket.data.userId =
+            normalizedUserId;
 
-        // User room
-        socket.join(`user:${normalizedUserId}`);
+          // ---------------------------------------------
+          // USER ROOM
+          // ---------------------------------------------
 
-        // Store socket
-        if (!onlineUsers.has(normalizedUserId)) {
-          onlineUsers.set(normalizedUserId, new Set());
+          socket.join(
+            `user:${normalizedUserId}`,
+          );
+
+          // ---------------------------------------------
+          // STORE SOCKET
+          // ---------------------------------------------
+
+          if (
+            !onlineUsers.has(
+              normalizedUserId,
+            )
+          ) {
+            onlineUsers.set(
+              normalizedUserId,
+              new Set(),
+            );
+          }
+
+          onlineUsers
+            .get(normalizedUserId)!
+            .add(socket.id);
+
+          // ---------------------------------------------
+          // UPDATE USER STATUS
+          // ---------------------------------------------
+
+          await User.findByIdAndUpdate(
+            normalizedUserId,
+            {
+              status: "online",
+              lastSeen: null,
+            },
+          );
+
+          // ---------------------------------------------
+          // TELL EVERYONE USER IS ONLINE
+          // ---------------------------------------------
+
+          io.emit("user-online", {
+            userId:
+              normalizedUserId,
+          });
+
+          console.log(
+            "ONLINE:",
+            normalizedUserId,
+          );
+
+          // ---------------------------------------------
+          // IMPORTANT:
+          //
+          // Receiver offline tha to ab pending messages
+          // ko DELIVERED mark karo.
+          //
+          // Conversation open karne ki zaroorat nahi.
+          // ---------------------------------------------
+
+          await deliverPendingMessages(
+            normalizedUserId,
+          );
+        } catch (error) {
+          console.error(
+            "Join user error:",
+            error,
+          );
         }
-
-        onlineUsers
-          .get(normalizedUserId)!
-          .add(socket.id);
-
-        // Update user status
-        await User.findByIdAndUpdate(normalizedUserId, {
-          status: "online",
-          lastSeen: null,
-        });
-
-        // Tell everyone user is online
-        io.emit("user-online", {
-          userId: normalizedUserId,
-        });
-
-        console.log("ONLINE:", normalizedUserId);
-      } catch (error) {
-        console.error("Join user error:", error);
-      }
-    });
+      },
+    );
 
     // ===================================================
     // JOIN CONVERSATION
@@ -103,12 +283,24 @@ app.prepare().then(() => {
 
     socket.on(
       "join-conversation",
-      (conversationId: string) => {
-        socket.join(`conversation:${conversationId}`);
+      async (conversationId: string) => {
+        try {
+          const normalizedConversationId =
+            String(conversationId);
 
-        console.log(
-          `JOIN CONVERSATION: ${socket.data.userId} -> ${conversationId}`,
-        );
+          socket.join(
+            `conversation:${normalizedConversationId}`,
+          );
+
+          console.log(
+            `JOIN CONVERSATION: ${socket.data.userId} -> ${normalizedConversationId}`,
+          );
+        } catch (error) {
+          console.error(
+            "Join conversation error:",
+            error,
+          );
+        }
       },
     );
 
@@ -119,10 +311,15 @@ app.prepare().then(() => {
     socket.on(
       "leave-conversation",
       (conversationId: string) => {
-        socket.leave(`conversation:${conversationId}`);
+        const normalizedConversationId =
+          String(conversationId);
+
+        socket.leave(
+          `conversation:${normalizedConversationId}`,
+        );
 
         console.log(
-          `LEAVE CONVERSATION: ${socket.data.userId} -> ${conversationId}`,
+          `LEAVE CONVERSATION: ${socket.data.userId} -> ${normalizedConversationId}`,
         );
       },
     );
@@ -164,10 +361,13 @@ app.prepare().then(() => {
       }) => {
         socket
           .to(`conversation:${conversationId}`)
-          .emit("user-stop-typing", {
-            conversationId,
-            userId,
-          });
+          .emit(
+            "user-stop-typing",
+            {
+              conversationId,
+              userId,
+            },
+          );
       },
     );
 
@@ -187,21 +387,13 @@ app.prepare().then(() => {
         try {
           await connectDB();
 
-          // ------------------------------------------------
-          // OPEN CHAT WINDOW
-          // ------------------------------------------------
-
-          io.to(`conversation:${conversationId}`).emit(
-            "receive-message",
-            message,
-          );
-
-          // ------------------------------------------------
-          // GET CONVERSATION PARTICIPANTS
-          // ------------------------------------------------
+          const normalizedConversationId =
+            String(conversationId);
 
           const conversation =
-            await Conversation.findById(conversationId)
+            await Conversation.findById(
+              normalizedConversationId,
+            )
               .select("participants")
               .lean();
 
@@ -209,18 +401,109 @@ app.prepare().then(() => {
             return;
           }
 
-          // ------------------------------------------------
-          // UPDATE SIDEBAR FOR ALL PARTICIPANTS
-          // ------------------------------------------------
+          const senderId = String(
+            message.sender?._id ||
+              message.sender,
+          );
 
-          for (const participantId of conversation.participants) {
-            io.to(`user:${participantId.toString()}`).emit(
+          const messageId =
+            String(message._id);
+
+          // ---------------------------------------------
+          // SEND TO OPEN CONVERSATION
+          // ---------------------------------------------
+
+          io.to(
+            `conversation:${normalizedConversationId}`,
+          ).emit(
+            "receive-message",
+            message,
+          );
+
+          // ---------------------------------------------
+          // PROCESS PARTICIPANTS
+          // ---------------------------------------------
+
+          for (const participantId of
+            conversation.participants) {
+            const participantUserId =
+              String(participantId);
+
+            // Sender ko delivered nahi karna
+            if (
+              participantUserId ===
+              senderId
+            ) {
+              continue;
+            }
+
+            // -------------------------------------------
+            // SIDEBAR LIVE UPDATE
+            // -------------------------------------------
+
+            io.to(
+              `user:${participantUserId}`,
+            ).emit(
               "conversation-message",
               {
-                conversationId: conversationId.toString(),
+                conversationId:
+                  normalizedConversationId,
+
                 message,
               },
             );
+
+            // -------------------------------------------
+            // CHECK ONLINE
+            // -------------------------------------------
+
+            const userSockets =
+              onlineUsers.get(
+                participantUserId,
+              );
+
+            const isOnline =
+              !!userSockets &&
+              userSockets.size > 0;
+
+            // -------------------------------------------
+            // ONLINE = DELIVERED
+            // -------------------------------------------
+
+            if (isOnline) {
+              await Message.findByIdAndUpdate(
+                messageId,
+                {
+                  $addToSet: {
+                    deliveredBy:
+                      participantUserId,
+                  },
+                },
+              );
+
+              // -----------------------------------------
+              // SENDER KO DELIVERED EVENT
+              // -----------------------------------------
+
+              io.to(
+                `user:${senderId}`,
+              ).emit(
+                "message-delivered",
+                {
+                  conversationId:
+                    normalizedConversationId,
+
+                  messageId,
+
+                  userId:
+                    participantUserId,
+                },
+              );
+
+              console.log(
+                `DELIVERED: ${messageId} -> ${participantUserId}`,
+              );
+            }
           }
         } catch (error) {
           console.error(
@@ -235,11 +518,9 @@ app.prepare().then(() => {
     // MESSAGE DELIVERED
     // ===================================================
     //
-    // Receiver has received the message through socket,
-    // but has NOT necessarily opened the conversation.
-    //
-    // Result:
-    // ✓✓ gray
+    // Optional fallback:
+    // Agar client manually delivered emit kare,
+    // server DB + sender UI update karega.
     //
     // ===================================================
 
@@ -258,57 +539,51 @@ app.prepare().then(() => {
           await connectDB();
 
           const message =
-            await Message.findById(messageId)
-              .select("sender deliveredBy")
-              .lean();
+            await Message.findById(
+              messageId,
+            );
 
           if (!message) {
             return;
           }
 
-          const senderId = String(message.sender);
-          const receiverId = String(userId);
+          const senderId =
+            String(message.sender);
 
-          // Sender cannot deliver his own message
-          if (senderId === receiverId) {
+          // Sender apna message delivered
+          // nahi karega
+          if (
+            senderId ===
+            String(userId)
+          ) {
             return;
           }
 
-          // Save delivered user
           await Message.findByIdAndUpdate(
             messageId,
             {
               $addToSet: {
-                deliveredBy: receiverId,
+                deliveredBy:
+                  String(userId),
               },
             },
-            {
-              new: true,
-            },
           );
 
-          // Send live update to everyone
-          io.to(`conversation:${conversationId}`).emit(
+          // Sender ko update
+          io.to(
+            `user:${senderId}`,
+          ).emit(
             "message-delivered",
             {
-              conversationId,
-              messageId,
-              userId: receiverId,
-            },
-          );
+              conversationId:
+                String(conversationId),
 
-          // Also update sender directly.
-          io.to(`user:${senderId}`).emit(
-            "message-delivered",
-            {
-              conversationId,
-              messageId,
-              userId: receiverId,
-            },
-          );
+              messageId:
+                String(messageId),
 
-          console.log(
-            `MESSAGE DELIVERED: ${messageId} -> ${receiverId}`,
+              userId:
+                String(userId),
+            },
           );
         } catch (error) {
           console.error(
@@ -323,12 +598,15 @@ app.prepare().then(() => {
     // MESSAGE SEEN
     // ===================================================
     //
-    // Receiver has opened the conversation and seen it.
+    // Receiver conversation open karta hai
+    // aur messages dekhta hai.
     //
     // Result:
-    // ✓✓ blue
+    // deliveredBy = receiver
+    // seenBy      = receiver
     //
-    // Seen automatically means delivered as well.
+    // Sender:
+    // ✓✓ blue
     //
     // ===================================================
 
@@ -347,60 +625,65 @@ app.prepare().then(() => {
           await connectDB();
 
           const message =
-            await Message.findById(messageId)
-              .select("sender")
-              .lean();
+            await Message.findById(
+              messageId,
+            );
 
           if (!message) {
             return;
           }
 
-          const senderId = String(message.sender);
-          const receiverId = String(userId);
+          const senderId =
+            String(message.sender);
 
-          // Sender cannot see his own message
-          if (senderId === receiverId) {
+          // Sender apna message seen
+          // nahi karega
+          if (
+            senderId ===
+            String(userId)
+          ) {
             return;
           }
 
-          // Seen = Delivered + Seen
+          // ---------------------------------------------
+          // SEEN = DELIVERED + SEEN
+          // ---------------------------------------------
+
           await Message.findByIdAndUpdate(
             messageId,
             {
               $addToSet: {
-                deliveredBy: receiverId,
-                seenBy: receiverId,
+                deliveredBy:
+                  String(userId),
+
+                seenBy:
+                  String(userId),
               },
             },
-            {
-              new: true,
-            },
           );
 
-          // Live update for open conversation
-          io.to(`conversation:${conversationId}`).emit(
-            "message-seen",
-            {
-              conversationId,
-              messageId,
-              userId: receiverId,
-            },
-          );
+          // ---------------------------------------------
+          // SENDER KO SEEN EVENT
+          // ---------------------------------------------
 
-          // IMPORTANT:
-          // Sender may not currently be inside the
-          // conversation room, so notify sender directly.
-          io.to(`user:${senderId}`).emit(
+          io.to(
+            `user:${senderId}`,
+          ).emit(
             "message-seen",
             {
-              conversationId,
-              messageId,
-              userId: receiverId,
+              conversationId:
+                String(conversationId),
+
+              messageId:
+                String(messageId),
+
+              userId:
+                String(userId),
             },
           );
 
           console.log(
-            `MESSAGE SEEN: ${messageId} -> ${receiverId}`,
+            `SEEN: ${messageId} -> ${userId}`,
           );
         } catch (error) {
           console.error(
@@ -411,71 +694,178 @@ app.prepare().then(() => {
       },
     );
 
+
+    // ===================================================
+// MESSAGE DELETED
+// ===================================================
+//
+// Delete for everyone ke baad sender client ye event
+// emit karega.
+//
+// Server sirf conversation ke doosre users ko event
+// forward karega.
+//
+// Database deletion API already kar chuki hoti hai.
+// ===================================================
+
+socket.on(
+  "message-deleted",
+  ({
+    conversationId,
+    messageId,
+    deleteType,
+  }: {
+    conversationId: string;
+    messageId: string;
+    deleteType: "me" | "everyone";
+  }) => {
+    try {
+      const normalizedConversationId =
+        String(conversationId);
+
+      const normalizedMessageId =
+        String(messageId);
+
+      // ================================================
+      // DELETE FOR EVERYONE
+      // ================================================
+
+      if (deleteType === "everyone") {
+        socket
+          .to(
+            `conversation:${normalizedConversationId}`,
+          )
+          .emit(
+            "message-deleted",
+            {
+              conversationId:
+                normalizedConversationId,
+
+              messageId:
+                normalizedMessageId,
+
+              deleteType: "everyone",
+            },
+          );
+
+        console.log(
+          `MESSAGE DELETED FOR EVERYONE: ${normalizedMessageId}`,
+        );
+
+        return;
+      }
+
+      // ================================================
+      // DELETE FOR ME
+      // ================================================
+      //
+      // Isko broadcast nahi karna.
+      // Sirf jis user ne delete kiya uski screen se
+      // message remove hoga.
+      // ================================================
+
+      console.log(
+        `MESSAGE DELETED FOR ME: ${normalizedMessageId}`,
+      );
+    } catch (error) {
+      console.error(
+        "Message deleted socket error:",
+        error,
+      );
+    }
+  },
+);
+
     // ===================================================
     // DISCONNECT
     // ===================================================
 
-    socket.on("disconnect", async () => {
-      try {
-        const userId = socket.data.userId;
+    socket.on(
+      "disconnect",
+      async () => {
+        try {
+          const userId =
+            socket.data.userId;
 
-        if (!userId) {
-          console.log(
-            "Socket Disconnected:",
-            socket.id,
-          );
+          if (!userId) {
+            console.log(
+              "Socket Disconnected:",
+              socket.id,
+            );
 
-          return;
-        }
-
-        await connectDB();
-
-        const sockets = onlineUsers.get(userId);
-
-        if (sockets) {
-          sockets.delete(socket.id);
-
-          // User is completely offline
-          if (sockets.size === 0) {
-            onlineUsers.delete(userId);
-
-            const lastSeen = new Date();
-
-            await User.findByIdAndUpdate(userId, {
-              status: "offline",
-              lastSeen,
-            });
-
-            io.emit("user-offline", {
-              userId,
-              lastSeen,
-            });
-
-            console.log("OFFLINE:", userId);
+            return;
           }
-        }
-      } catch (error) {
-        console.error(
-          "Disconnect error:",
-          error,
-        );
-      }
 
-      console.log(
-        "Socket Disconnected:",
-        socket.id,
-      );
-    });
+          await connectDB();
+
+          const sockets =
+            onlineUsers.get(userId);
+
+          if (sockets) {
+            sockets.delete(
+              socket.id,
+            );
+
+            // -------------------------------------------
+            // USER COMPLETELY OFFLINE
+            // -------------------------------------------
+
+            if (sockets.size === 0) {
+              onlineUsers.delete(
+                userId,
+              );
+
+              const lastSeen =
+                new Date();
+
+              await User.findByIdAndUpdate(
+                userId,
+                {
+                  status: "offline",
+                  lastSeen,
+                },
+              );
+
+              io.emit(
+                "user-offline",
+                {
+                  userId,
+                  lastSeen,
+                },
+              );
+
+              console.log(
+                "OFFLINE:",
+                userId,
+              );
+            }
+          }
+        } catch (error) {
+          console.error(
+            "Disconnect error:",
+            error,
+          );
+        }
+
+        console.log(
+          "Socket Disconnected:",
+          socket.id,
+        );
+      },
+    );
   });
 
   // =====================================================
   // START SERVER
   // =====================================================
 
-  httpServer.listen(port, () => {
-    console.log(
-      `> Ready on http://${hostname}:${port}`,
-    );
-  });
+  httpServer.listen(
+    port,
+    () => {
+      console.log(
+        `> Ready on http://${hostname}:${port}`,
+      );
+    },
+  );
 });
 

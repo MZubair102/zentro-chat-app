@@ -1,268 +1,342 @@
 "use client";
 
 interface Props {
-  message: any;
-  own: boolean;
+message: any;
+own: boolean;
 }
 
 export default function MessageBubble({
-  message,
-  own,
+message,
+own,
 }: Props) {
-  // =====================================================
-  // MESSAGE IDS
-  // =====================================================
+// =====================================================
+// MESSAGE IDS
+// =====================================================
 
-  const senderId = String(
-    message.sender?._id || message.sender || "",
-  );
+const senderId = String(
+message.sender?._id ||
+message.sender ||
+"",
+);
 
-  // =====================================================
-  // DELIVERED BY
-  // =====================================================
+// =====================================================
+// DELIVERED BY
+// =====================================================
 
-  const deliveredBy = Array.isArray(message.deliveredBy)
-    ? message.deliveredBy
-    : [];
+const deliveredBy = Array.isArray(
+message.deliveredBy,
+)
+? message.deliveredBy
+: [];
 
-  const isDelivered = deliveredBy.some((user: any) => {
-    const userId = String(user?._id || user || "");
+const isDelivered =
+deliveredBy.length > 0 &&
+deliveredBy.some((user: any) => {
+const userId = String(
+user?._id || user || "",
+);
 
-    // Sender ko delivered count nahi karna
-    return userId !== senderId;
-  });
 
-  // =====================================================
-  // SEEN BY
-  // =====================================================
+  return userId !== senderId;
+});
 
-  const seenBy = Array.isArray(message.seenBy)
-    ? message.seenBy
-    : [];
 
-  const isSeen = seenBy.some((user: any) => {
-    const userId = String(user?._id || user || "");
+// =====================================================
+// SEEN BY
+// =====================================================
 
-    // Sender ko seen count nahi karna
-    return userId !== senderId;
-  });
+const seenBy = Array.isArray(
+message.seenBy,
+)
+? message.seenBy
+: [];
 
-  // =====================================================
-  // CHECK EMOJI ONLY
-  // =====================================================
+const isSeen =
+seenBy.length > 0 &&
+seenBy.some((user: any) => {
+const userId = String(
+user?._id || user || "",
+);
 
-  const text = message.text || "";
 
-  const emojiOnlyRegex =
-    /^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D|\s)+$/u;
+  return userId !== senderId;
+});
 
-  const isEmojiOnly =
-    text.trim().length > 0 &&
-    emojiOnlyRegex.test(text.trim());
 
-  // =====================================================
-  // FORMAT TIME
-  // =====================================================
+// =====================================================
+// TEXT
+// =====================================================
 
-  const time = message.createdAt
-    ? new Date(message.createdAt).toLocaleTimeString("en-US", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      })
-    : "";
+const text = message.text || "";
 
-  // =====================================================
-  // MESSAGE CONTENT
-  // =====================================================
+// =====================================================
+// EMOJI ONLY
+// =====================================================
 
-  const renderContent = () => {
-    // ===================================================
-    // IMAGE
-    // ===================================================
+const emojiOnlyRegex =
+/^(?:\p{Extended_Pictographic}|\p{Emoji_Component}|\uFE0F|\u200D|\s)+$/u;
 
-    if (
-      message.messageType === "image" &&
-      message.attachments?.length
-    ) {
-      return (
-        <div className="space-y-2">
-          {message.attachments.map(
-            (file: any, index: number) => (
-              <img
-                key={index}
-                src={file.url}
-                alt={file.name || "Image"}
-                className="max-h-80 max-w-full rounded-xl object-cover"
-              />
-            ),
-          )}
+const isEmojiOnly =
+text.trim().length > 0 &&
+emojiOnlyRegex.test(text.trim());
 
-          {text && (
-            <p className="whitespace-pre-wrap text-sm leading-6">
-              {text}
-            </p>
-          )}
-        </div>
-      );
-    }
+// =====================================================
+// FORMAT TIME
+// =====================================================
 
-    // ===================================================
-    // FILE
-    // ===================================================
+const time = message.createdAt
+? new Date(
+message.createdAt,
+).toLocaleTimeString("en-US", {
+hour: "numeric",
+minute: "2-digit",
+hour12: true,
+})
+: "";
 
-    if (
-      message.messageType === "file" &&
-      message.attachments?.length
-    ) {
-      return (
-        <div className="space-y-2">
-          {message.attachments.map(
-            (file: any, index: number) => (
-              <a
-                key={index}
-                href={file.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className={`block rounded-lg px-3 py-2 text-sm underline ${
-                  own
-                    ? "bg-white/10 text-white"
-                    : "bg-gray-100 text-gray-700"
-                }`}
-              >
-                📎 {file.name || "Download file"}
-              </a>
-            ),
-          )}
+// =====================================================
+// MESSAGE CONTENT
+// =====================================================
 
-          {text && (
-            <p className="whitespace-pre-wrap text-sm leading-6">
-              {text}
-            </p>
-          )}
-        </div>
-      );
-    }
+const renderContent = () => {
+// ===================================================
+// IMAGE
+// ===================================================
 
-    // ===================================================
-    // EMOJI ONLY
-    // ===================================================
 
-    if (isEmojiOnly) {
-      return (
-        <span className="block text-[42px] leading-[1.1]">
-          {text}
-        </span>
-      );
-    }
-
-    // ===================================================
-    // NORMAL TEXT
-    // ===================================================
-
-    return (
-      <p className="whitespace-pre-wrap text-sm leading-6">
-        {text}
-      </p>
-    );
-  };
-
-  // =====================================================
-  // MESSAGE STATUS
-  // =====================================================
-
-  const renderStatus = () => {
-    if (!own) {
-      return null;
-    }
-
-    // ===================================================
-    // SEEN
-    // ===================================================
-
-    if (isSeen) {
-      return (
-        <span
-          className="text-[13px] font-semibold leading-none text-blue-500"
-          title="Seen"
-        >
-          ✓✓
-        </span>
-      );
-    }
-
-    // ===================================================
-    // DELIVERED
-    // ===================================================
-
-    if (isDelivered) {
-      return (
-        <span
-          className="text-[13px] font-semibold leading-none text-gray-400"
-          title="Delivered"
-        >
-          ✓✓
-        </span>
-      );
-    }
-
-    // ===================================================
-    // SENT
-    // ===================================================
-
-    return (
-      <span
-        className="text-[13px] font-semibold leading-none text-gray-400"
-        title="Sent"
-      >
-        ✓
-      </span>
-    );
-  };
-
-  // =====================================================
-  // RETURN
-  // =====================================================
-
+if (
+  message.messageType === "image" &&
+  message.attachments?.length
+) {
   return (
-    <div
-      className={`flex ${
-        own ? "justify-end" : "justify-start"
-      }`}
+    <div className="space-y-2">
+      {message.attachments.map(
+        (file: any, index: number) => (
+          <img
+            key={index}
+            src={file.url}
+            alt={file.name || "Image"}
+            className="max-h-80 max-w-full rounded-xl object-cover"
+          />
+        ),
+      )}
+
+      {text && (
+        <p className="whitespace-pre-wrap text-sm leading-6">
+          {text}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ===================================================
+// FILE
+// ===================================================
+
+if (
+  message.messageType === "file" &&
+  message.attachments?.length
+) {
+  return (
+    <div className="space-y-2">
+      {message.attachments.map(
+        (file: any, index: number) => (
+          <a
+            key={index}
+            href={file.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`block rounded-lg px-3 py-2 text-sm underline ${
+              own
+                ? "bg-white/10 text-white"
+                : "bg-gray-100 text-gray-700"
+            }`}
+          >
+            📎{" "}
+            {file.name || "Download file"}
+          </a>
+        ),
+      )}
+
+      {text && (
+        <p className="whitespace-pre-wrap text-sm leading-6">
+          {text}
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ===================================================
+// EMOJI ONLY
+// ===================================================
+
+if (isEmojiOnly) {
+  return (
+    <span className="block text-[42px] leading-[1.1]">
+      {text}
+    </span>
+  );
+}
+
+// ===================================================
+// NORMAL TEXT
+// ===================================================
+
+return (
+  <p className="whitespace-pre-wrap text-sm leading-6">
+    {text}
+  </p>
+);
+
+
+};
+
+// =====================================================
+// MESSAGE STATUS
+// =====================================================
+
+const renderStatus = () => {
+// Receiver ke message par status nahi
+if (!own) {
+return null;
+}
+
+// ===================================================
+// SEEN
+// ===================================================
+
+if (isSeen) {
+  return (
+    <span
+      className="text-[13px] font-semibold leading-none text-blue-500"
+      title="Seen"
     >
-      <div
-        className={`max-w-[70%] ${
+      ✓✓
+    </span>
+  );
+}
+
+// ===================================================
+// DELIVERED
+// ===================================================
+
+if (isDelivered) {
+  return (
+    <span
+      className="text-[13px] font-semibold leading-none text-gray-400"
+      title="Delivered"
+    >
+      ✓✓
+    </span>
+  );
+}
+
+// ===================================================
+// SENT
+// ===================================================
+
+return (
+  <span
+    className="text-[13px] font-semibold leading-none text-gray-400"
+    title="Sent"
+  >
+    ✓
+  </span>
+);
+
+};
+
+// =====================================================
+// DELETED MESSAGE
+// =====================================================
+
+if (message.deletedForEveryone) {
+return (
+<div
+className={`flex ${
+          own
+            ? "justify-end"
+            : "justify-start"
+        }`}
+>
+<div
+className={`rounded-2xl px-4 py-3 ${
+            own
+              ? "rounded-br-md bg-[#0E1320]"
+              : "rounded-bl-md bg-white shadow-sm"
+          }`}
+> <p className="text-sm italic text-gray-400">
+This message was deleted </p>
+
+
+      <div className="mt-1 flex items-center justify-end">
+        <span className="text-[10px] text-gray-400">
+          {time}
+        </span>
+      </div>
+    </div>
+  </div>
+);
+
+
+}
+
+// =====================================================
+// RETURN
+// =====================================================
+
+return (
+<div
+className={`flex ${
+        own
+          ? "justify-end"
+          : "justify-start"
+      }`}
+>
+<div
+className={`max-w-[70%] ${
           isEmojiOnly
             ? "px-1 py-1"
             : `rounded-2xl px-4 py-3 ${
-                own
-                  ? "rounded-br-md bg-[#0E1320] text-white"
-                  : "rounded-bl-md bg-white text-gray-800 shadow-sm"
-              }`
+own
+? "rounded-br-md bg-[#0E1320] text-white"
+: "rounded-bl-md bg-white text-gray-800 shadow-sm"
+}`
         }`}
-      >
-        {/* MESSAGE */}
+>
+{/* ================================================= */}
+{/* MESSAGE CONTENT */}
+{/* ================================================= */}
 
-        {renderContent()}
 
-        {/* TIME + STATUS */}
+    {renderContent()}
 
-        <div
-          className={`mt-1 flex items-center justify-end gap-1 ${
-            isEmojiOnly ? "px-1" : ""
-          }`}
-        >
-          {/* TIME */}
+    {/* ================================================= */}
+    {/* TIME + STATUS */}
+    {/* ================================================= */}
 
-          <span className="text-[10px] text-gray-400">
-            {time}
-          </span>
+    <div
+      className={`mt-1 flex items-center justify-end gap-1 ${
+        isEmojiOnly
+          ? "px-1"
+          : ""
+      }`}
+    >
+      {/* TIME */}
 
-          {/* STATUS */}
+      <span className="text-[10px] text-gray-400">
+        {time}
+      </span>
 
-          {renderStatus()}
-        </div>
-      </div>
+      {/* STATUS */}
+
+      {renderStatus()}
     </div>
-  );
+  </div>
+</div>
+
+
+);
 }

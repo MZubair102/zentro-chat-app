@@ -55,8 +55,10 @@ export async function GET(
       );
     }
 
-    // Make sure logged-in user belongs
-    // to this conversation
+    // =====================================
+    // CHECK CONVERSATION
+    // =====================================
+
     const conversation =
       await Conversation.findOne({
         _id: conversationId,
@@ -76,9 +78,18 @@ export async function GET(
       );
     }
 
+    // =====================================
+    // GET MESSAGES
+    // =====================================
+
     const messages =
       await Message.find({
         conversationId,
+
+        // Hide messages deleted only for me
+        deletedFor: {
+          $ne: userId,
+        },
       })
         .populate(
           "sender",
@@ -394,6 +405,167 @@ export async function POST(
         message:
           error?.message ||
           "Failed to send message.",
+      },
+      {
+        status: 500,
+      }
+    );
+  }
+}
+
+
+// ======================================================
+// DELETE MESSAGE
+// ======================================================
+
+// app/api/messages/[conversationId]/delete/route.ts
+
+export async function DELETE(req: NextRequest) {
+  try {
+    await connectDB();
+
+    const userId = await getCurrentUserId();
+
+    if (!userId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unauthorized",
+        },
+        { status: 401 }
+      );
+    }
+
+    const body = await req.json();
+
+    const {
+      conversationId,
+      messageId,
+      deleteForEveryone,
+    } = body;
+
+    if (!conversationId || !messageId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "conversationId and messageId are required",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    if (
+      !mongoose.Types.ObjectId.isValid(messageId) ||
+      !mongoose.Types.ObjectId.isValid(conversationId)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid IDs",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    // Conversation check
+    const conversation =
+      await Conversation.findOne({
+        _id: conversationId,
+        participants: userId,
+      });
+
+    if (!conversation) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Conversation not found",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    const message =
+      await Message.findOne({
+        _id: messageId,
+        conversationId,
+      });
+
+    if (!message) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Message not found",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    // =====================================================
+    // DELETE FOR EVERYONE
+    // =====================================================
+
+    if (deleteForEveryone) {
+      if (
+        String(message.sender) !==
+        String(userId)
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Only sender can delete for everyone",
+          },
+          {
+            status: 403,
+          }
+        );
+      }
+
+      message.deletedForEveryone = true;
+      message.deletedAt = new Date();
+
+      await message.save();
+
+      return NextResponse.json({
+        success: true,
+        deleteType: "everyone",
+        messageId,
+      });
+    }
+
+    // =====================================================
+    // DELETE FOR ME
+    // =====================================================
+
+    await Message.findByIdAndUpdate(
+      messageId,
+      {
+        $addToSet: {
+          deletedFor: userId,
+        },
+      }
+    );
+
+    return NextResponse.json({
+      success: true,
+      deleteType: "me",
+      messageId,
+    });
+  } catch (error: any) {
+    console.error(error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        message: error.message,
       },
       {
         status: 500,
