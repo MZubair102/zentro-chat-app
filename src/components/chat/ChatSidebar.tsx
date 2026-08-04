@@ -97,97 +97,149 @@ export default function ChatSidebar({
   // =====================================================
 
   useEffect(() => {
+  loadConversations();
 
+  // =====================================================
+  // LIVE MESSAGE FOR SIDEBAR
+  // =====================================================
 
-    loadConversations();
+  const conversationMessage = ({
+    conversationId,
+    message,
+  }: any) => {
+    setConversations((prev) => {
+      const exists = prev.some(
+        (conversation) =>
+          String(conversation._id) ===
+          String(conversationId),
+      );
 
-    // connect socket
+      if (!exists) {
+        return prev;
+      }
 
+      const updated = prev.map(
+        (conversation) => {
+          if (
+            String(conversation._id) !==
+            String(conversationId)
+          ) {
+            return conversation;
+          }
 
-    // =====================================================
-    // RECEIVE MESSAGE
-    // =====================================================
+          return {
+            ...conversation,
+            lastMessage: message,
+          };
+        },
+      );
 
-    const receiveMessage = (message: any) => {
-      setConversations((prev) => {
-        const updated = prev.map((conversation) =>
-          conversation._id.toString() === message.conversationId.toString()
-            ? {
-                ...conversation,
-                lastMessage: message,
-              }
-            : conversation,
-        );
+      updated.sort((a, b) => {
+        const aTime = new Date(
+          a.lastMessage?.createdAt || 0,
+        ).getTime();
 
-        updated.sort((a, b) => {
-          const aTime = new Date(a.lastMessage?.createdAt || 0).getTime();
+        const bTime = new Date(
+          b.lastMessage?.createdAt || 0,
+        ).getTime();
 
-          const bTime = new Date(b.lastMessage?.createdAt || 0).getTime();
-
-          return bTime - aTime;
-        });
-
-        return [...updated];
+        return bTime - aTime;
       });
-    };
 
-    // =====================================================
-    // USER ONLINE
-    // =====================================================
+      return updated;
+    });
+  };
 
-    const userOnline = ({ userId }: any) => {
-      setConversations((prev) =>
-        prev.map((conversation) => ({
-          ...conversation,
+  // =====================================================
+  // USER ONLINE
+  // =====================================================
 
-          participants: conversation.participants?.map((user: any) =>
-            user._id.toString() === userId.toString()
-              ? {
-                  ...user,
+  const userOnline = ({
+    userId,
+  }: any) => {
+    setConversations((prev) =>
+      prev.map((conversation) => ({
+        ...conversation,
 
-                  status: "online",
-                }
-              : user,
+        participants:
+          conversation.participants?.map(
+            (user: any) =>
+              String(user._id) ===
+              String(userId)
+                ? {
+                    ...user,
+                    status: "online",
+                  }
+                : user,
           ),
-        })),
-      );
-    };
+      })),
+    );
+  };
 
-    // =====================================================
-    // USER OFFLINE
-    // =====================================================
+  // =====================================================
+  // USER OFFLINE
+  // =====================================================
 
-    const userOffline = ({ userId, lastSeen }: any) => {
-      setConversations((prev) =>
-        prev.map((conversation) => ({
-          ...conversation,
-          participants: conversation.participants.map((user: any) =>
-            user._id.toString() === userId.toString()
-              ? {
-                  ...user,
-                  status: "offline",
-                  lastSeen,
-                }
-              : user,
+  const userOffline = ({
+    userId,
+    lastSeen,
+  }: any) => {
+    setConversations((prev) =>
+      prev.map((conversation) => ({
+        ...conversation,
+
+        participants:
+          conversation.participants?.map(
+            (user: any) =>
+              String(user._id) ===
+              String(userId)
+                ? {
+                    ...user,
+                    status: "offline",
+                    lastSeen,
+                  }
+                : user,
           ),
-        })),
-      );
-    };
+      })),
+    );
+  };
 
-    socket.on("receive-message", receiveMessage);
+  // =====================================================
+  // SOCKET LISTENERS
+  // =====================================================
 
-    socket.on("user-online", userOnline);
+  socket.on(
+    "conversation-message",
+    conversationMessage,
+  );
 
-    socket.on("user-offline", userOffline);
+  socket.on(
+    "user-online",
+    userOnline,
+  );
 
-    return () => {
-      socket.off("receive-message", receiveMessage);
+  socket.on(
+    "user-offline",
+    userOffline,
+  );
 
-      socket.off("user-online", userOnline);
+  return () => {
+    socket.off(
+      "conversation-message",
+      conversationMessage,
+    );
 
-      socket.off("user-offline", userOffline);
-    };
-  }, [currentUserId]);
+    socket.off(
+      "user-online",
+      userOnline,
+    );
+
+    socket.off(
+      "user-offline",
+      userOffline,
+    );
+  };
+}, [currentUserId]);
   // =====================================================
   // CREATE CHAT
   // =====================================================
