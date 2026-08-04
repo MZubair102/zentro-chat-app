@@ -36,20 +36,15 @@ export default function ChatWindow({
   // AUTO SCROLL
   // =====================================================
 
-  const messagesContainerRef =
+  const messagesEndRef =
     useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = (
     behavior: ScrollBehavior = "smooth",
   ) => {
-    const container =
-      messagesContainerRef.current;
-
-    if (!container) return;
-
-    container.scrollTo({
-      top: container.scrollHeight,
+    messagesEndRef.current?.scrollIntoView({
       behavior,
+      block: "end",
     });
   };
 
@@ -58,7 +53,7 @@ export default function ChatWindow({
   // =====================================================
 
   const otherUser =
-    conversation?.participants?.find(
+    conversation.participants?.find(
       (user: any) =>
         String(user._id) !==
         String(currentUserId),
@@ -84,7 +79,7 @@ export default function ChatWindow({
     );
 
   // =====================================================
-  // UPDATE STATUS WHEN CONVERSATION CHANGES
+  // UPDATE USER STATUS
   // =====================================================
 
   useEffect(() => {
@@ -123,16 +118,11 @@ export default function ChatWindow({
     const now = new Date();
 
     const time =
-      lastSeen.toLocaleTimeString(
-        "en-US",
-        {
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: true,
-        },
-      );
-
-    // TODAY
+      lastSeen.toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+      });
 
     if (
       lastSeen.toDateString() ===
@@ -140,8 +130,6 @@ export default function ChatWindow({
     ) {
       return `last seen today at ${time}`;
     }
-
-    // YESTERDAY
 
     const yesterday = new Date(now);
 
@@ -155,8 +143,6 @@ export default function ChatWindow({
     ) {
       return `last seen yesterday at ${time}`;
     }
-
-    // OLDER
 
     return `last seen ${lastSeen.toLocaleDateString(
       "en-US",
@@ -172,7 +158,9 @@ export default function ChatWindow({
   // =====================================================
 
   useEffect(() => {
-    if (!otherUserId) return;
+    if (!otherUserId) {
+      return;
+    }
 
     const handleUserOnline = ({
       userId,
@@ -240,7 +228,9 @@ export default function ChatWindow({
   // =====================================================
 
   useEffect(() => {
-    if (!conversation?._id) return;
+    if (!conversation?._id) {
+      return;
+    }
 
     let mounted = true;
 
@@ -265,68 +255,72 @@ export default function ChatWindow({
         const data = await res.json();
 
         if (
-          mounted &&
-          data.success
+          !mounted ||
+          !data.success
         ) {
-          const loadedMessages =
-            Array.isArray(data.data)
-              ? data.data
-              : [];
-
-          setMessages(
-            loadedMessages,
-          );
-
-          // ---------------------------------------------
-          // IMPORTANT:
-          // Existing incoming messages ko delivered mark
-          // karo agar current user receiver hai.
-          // ---------------------------------------------
-
-          loadedMessages.forEach(
-            (message: any) => {
-              const senderId =
-                message.sender?._id ||
-                message.sender;
-
-              if (
-                String(senderId) ===
-                String(currentUserId)
-              ) {
-                return;
-              }
-
-              const deliveredBy =
-                Array.isArray(
-                  message.deliveredBy,
-                )
-                  ? message.deliveredBy
-                  : [];
-
-              const alreadyDelivered =
-                deliveredBy.some(
-                  (id: any) =>
-                    String(
-                      id?._id || id,
-                    ) ===
-                    String(currentUserId),
-                );
-
-              if (!alreadyDelivered) {
-                socket.emit(
-                  "message-delivered",
-                  {
-                    conversationId,
-                    messageId:
-                      message._id,
-                    userId:
-                      currentUserId,
-                  },
-                );
-              }
-            },
-          );
+          return;
         }
+
+        const loadedMessages =
+          Array.isArray(data.data)
+            ? data.data
+            : [];
+
+        setMessages(loadedMessages);
+
+        // -----------------------------------------------
+        // LOADED RECEIVED MESSAGES = DELIVERED
+        // -----------------------------------------------
+
+        loadedMessages.forEach(
+          (message: any) => {
+            const senderId =
+              message.sender?._id ||
+              message.sender;
+
+            // Apna message skip
+            if (
+              String(senderId) ===
+              String(currentUserId)
+            ) {
+              return;
+            }
+
+            const deliveredBy =
+              Array.isArray(
+                message.deliveredBy,
+              )
+                ? message.deliveredBy
+                : [];
+
+            const alreadyDelivered =
+              deliveredBy.some(
+                (id: any) =>
+                  String(
+                    id?._id || id,
+                  ) ===
+                  String(currentUserId),
+              );
+
+            if (!alreadyDelivered) {
+              socket.emit(
+                "message-delivered",
+                {
+                  conversationId,
+                  messageId:
+                    message._id,
+                  userId:
+                    currentUserId,
+                },
+              );
+            }
+          },
+        );
+
+        // Scroll after messages load
+        setTimeout(() => {
+          scrollToBottom("auto");
+        }, 50);
       } catch (error) {
         console.error(
           "Load messages error:",
@@ -343,9 +337,6 @@ export default function ChatWindow({
       "join-conversation",
       conversationId,
     );
-
-    // Load after joining room
-    loadMessages();
 
     // ===================================================
     // RECEIVE MESSAGE
@@ -381,10 +372,7 @@ export default function ChatWindow({
       });
 
       // -----------------------------------------------
-      // IMPORTANT:
-      // Agar message kisi aur ne bheja hai,
-      // current user receiver hai.
-      // Message delivered mark karo.
+      // RECEIVER = DELIVERED
       // -----------------------------------------------
 
       const senderId =
@@ -395,40 +383,22 @@ export default function ChatWindow({
         String(senderId) !==
         String(currentUserId)
       ) {
-        const deliveredBy =
-          Array.isArray(
-            message.deliveredBy,
-          )
-            ? message.deliveredBy
-            : [];
-
-        const alreadyDelivered =
-          deliveredBy.some(
-            (id: any) =>
-              String(
-                id?._id || id,
-              ) ===
-              String(currentUserId),
-          );
-
-        if (!alreadyDelivered) {
-          socket.emit(
-            "message-delivered",
-            {
-              conversationId,
-              messageId:
-                message._id,
-              userId:
-                currentUserId,
-            },
-          );
-        }
+        socket.emit(
+          "message-delivered",
+          {
+            conversationId,
+            messageId:
+              message._id,
+            userId:
+              currentUserId,
+          },
+        );
       }
 
-      // Scroll after new message
+      // Scroll new message
       setTimeout(() => {
         scrollToBottom("smooth");
-      }, 50);
+      }, 30);
     };
 
     // ===================================================
@@ -458,7 +428,7 @@ export default function ChatWindow({
               ? message.deliveredBy
               : [];
 
-          const alreadyDelivered =
+          const exists =
             currentDeliveredBy.some(
               (id: any) =>
                 String(
@@ -467,13 +437,12 @@ export default function ChatWindow({
                 String(userId),
             );
 
-          if (alreadyDelivered) {
+          if (exists) {
             return message;
           }
 
           return {
             ...message,
-
             deliveredBy: [
               ...currentDeliveredBy,
               userId,
@@ -510,7 +479,7 @@ export default function ChatWindow({
               ? message.seenBy
               : [];
 
-          const alreadySeen =
+          const exists =
             currentSeenBy.some(
               (id: any) =>
                 String(
@@ -519,7 +488,7 @@ export default function ChatWindow({
                 String(userId),
             );
 
-          if (alreadySeen) {
+          if (exists) {
             return message;
           }
 
@@ -530,13 +499,39 @@ export default function ChatWindow({
               ...currentSeenBy,
               userId,
             ],
+
+            // Seen = Delivered bhi
+            deliveredBy: (() => {
+              const currentDeliveredBy =
+                Array.isArray(
+                  message.deliveredBy,
+                )
+                  ? message.deliveredBy
+                  : [];
+
+              const deliveredExists =
+                currentDeliveredBy.some(
+                  (id: any) =>
+                    String(
+                      id?._id || id,
+                    ) ===
+                    String(userId),
+                );
+
+              return deliveredExists
+                ? currentDeliveredBy
+                : [
+                    ...currentDeliveredBy,
+                    userId,
+                  ];
+            })(),
           };
         }),
       );
     };
 
     // ===================================================
-    // USER TYPING
+    // TYPING
     // ===================================================
 
     const userTyping = ({
@@ -562,10 +557,6 @@ export default function ChatWindow({
 
       setTypingUser(userId);
     };
-
-    // ===================================================
-    // USER STOP TYPING
-    // ===================================================
 
     const userStopTyping = ({
       conversationId:
@@ -611,6 +602,12 @@ export default function ChatWindow({
     );
 
     // ===================================================
+    // LOAD
+    // ===================================================
+
+    loadMessages();
+
+    // ===================================================
     // CLEANUP
     // ===================================================
 
@@ -653,21 +650,6 @@ export default function ChatWindow({
   ]);
 
   // =====================================================
-  // AUTO SCROLL WHEN MESSAGES CHANGE
-  // =====================================================
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      scrollToBottom("auto");
-    }, 50);
-
-    return () => clearTimeout(timer);
-  }, [
-    conversation?._id,
-    messages.length,
-  ]);
-
-  // =====================================================
   // MARK RECEIVED MESSAGES AS SEEN
   // =====================================================
 
@@ -680,63 +662,74 @@ export default function ChatWindow({
       return;
     }
 
-    const unreadMessages =
-      messages.filter(
-        (message) => {
-          const senderId =
-            message.sender?._id ||
-            message.sender;
+    const conversationId =
+      conversation._id.toString();
 
-          if (
-            String(senderId) ===
-            String(currentUserId)
-          ) {
-            return false;
-          }
+    messages.forEach((message) => {
+      const senderId =
+        message.sender?._id ||
+        message.sender;
 
-          const seenBy =
-            Array.isArray(
-              message.seenBy,
-            )
-              ? message.seenBy
-              : [];
+      // Apna message skip
+      if (
+        String(senderId) ===
+        String(currentUserId)
+      ) {
+        return;
+      }
 
-          return !seenBy.some(
-            (id: any) =>
-              String(
-                id?._id || id,
-              ) ===
-              String(currentUserId),
-          );
+      const seenBy =
+        Array.isArray(message.seenBy)
+          ? message.seenBy
+          : [];
+
+      const alreadySeen =
+        seenBy.some(
+          (id: any) =>
+            String(
+              id?._id || id,
+            ) ===
+            String(currentUserId),
+        );
+
+      if (alreadySeen) {
+        return;
+      }
+
+      // -----------------------------------------------
+      // MESSAGE SEEN
+      // -----------------------------------------------
+
+      socket.emit(
+        "message-seen",
+        {
+          conversationId,
+          messageId:
+            message._id,
+          userId:
+            currentUserId,
         },
       );
-
-    if (
-      !unreadMessages.length
-    ) {
-      return;
-    }
-
-    unreadMessages.forEach(
-      (message) => {
-        socket.emit(
-          "message-seen",
-          {
-            conversationId:
-              conversation._id,
-            messageId:
-              message._id,
-            userId:
-              currentUserId,
-          },
-        );
-      },
-    );
+    });
   }, [
     messages,
     conversation?._id,
     currentUserId,
   ]);
+
+  // =====================================================
+  // AUTO SCROLL WHEN MESSAGES CHANGE
+  // =====================================================
+
+  useEffect(() => {
+    if (!messages.length) {
+      return;
+    }
+
+    setTimeout(() => {
+      scrollToBottom("smooth");
+    }, 30);
+  }, [messages.length]);
 
   // =====================================================
   // SEND MESSAGE
@@ -790,10 +783,7 @@ export default function ChatWindow({
       const message =
         data.data;
 
-      // -----------------------------------------------
-      // Add locally immediately
-      // -----------------------------------------------
-
+      // Local message
       setMessages((prev) => {
         const exists = prev.some(
           (item) =>
@@ -811,10 +801,7 @@ export default function ChatWindow({
         ];
       });
 
-      // -----------------------------------------------
       // Socket
-      // -----------------------------------------------
-
       socket.emit(
         "send-message",
         {
@@ -824,13 +811,9 @@ export default function ChatWindow({
         },
       );
 
-      // -----------------------------------------------
-      // Scroll down
-      // -----------------------------------------------
-
       setTimeout(() => {
         scrollToBottom("smooth");
-      }, 50);
+      }, 30);
     } catch (error) {
       console.error(
         "Send message error:",
@@ -855,7 +838,7 @@ export default function ChatWindow({
         "Conversation";
 
   // =====================================================
-  // CONVERSATION AVATAR
+  // AVATAR
   // =====================================================
 
   const conversationAvatar =
@@ -870,15 +853,10 @@ export default function ChatWindow({
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[#f8f9fb]">
 
-      {/* ================================================= */}
       {/* HEADER */}
-      {/* ================================================= */}
 
       <header className="flex h-[76px] shrink-0 items-center justify-between border-b border-gray-200 bg-white px-6">
-
         <div className="flex items-center gap-3">
-
-          {/* AVATAR */}
 
           <div className="relative shrink-0">
             {conversationAvatar ? (
@@ -895,8 +873,6 @@ export default function ChatWindow({
               </div>
             )}
 
-            {/* ONLINE DOT */}
-
             {conversation.type ===
               "private" && (
               <span
@@ -909,8 +885,6 @@ export default function ChatWindow({
               />
             )}
           </div>
-
-          {/* NAME + STATUS */}
 
           <div>
             <h2 className="font-semibold text-gray-900">
@@ -939,8 +913,6 @@ export default function ChatWindow({
           </div>
         </div>
 
-        {/* ACTIONS */}
-
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -965,52 +937,54 @@ export default function ChatWindow({
         </div>
       </header>
 
-      {/* ================================================= */}
       {/* MESSAGES */}
-      {/* ================================================= */}
 
       <div
-        ref={messagesContainerRef}
-        className="min-h-0 flex-1 space-y-3 overflow-y-auto p-6"
+        className="min-h-0 flex-1 overflow-y-auto p-6"
+        id="chat-messages"
       >
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center text-sm text-gray-400">
             No messages yet.
           </div>
         ) : (
-          messages.map(
-            (message) => (
-              <MessageBubble
-                key={message._id}
-                message={message}
-                own={
-                  String(
-                    message.sender?._id ||
-                      message.sender,
-                  ) ===
-                  String(currentUserId)
-                }
-              />
-            ),
-          )
-        )}
+          <div className="space-y-3">
 
-        {/* TYPING */}
+            {messages.map(
+              (message) => (
+                <MessageBubble
+                  key={message._id}
+                  message={message}
+                  own={
+                    String(
+                      message.sender?._id ||
+                        message.sender,
+                    ) ===
+                    String(
+                      currentUserId,
+                    )
+                  }
+                />
+              ),
+            )}
 
-        {typingUser && (
-          <div className="text-sm text-gray-400">
-            Typing...
+            {typingUser && (
+              <div className="text-sm text-gray-400">
+                Typing...
+              </div>
+            )}
+
+            {/* SCROLL TARGET */}
+
+            <div
+              ref={messagesEndRef}
+              className="h-px"
+            />
           </div>
         )}
-
-        {/* SCROLL TARGET */}
-
-        <div className="h-px" />
       </div>
 
-      {/* ================================================= */}
       {/* INPUT */}
-      {/* ================================================= */}
 
       <div className="shrink-0">
         <MessageInput
