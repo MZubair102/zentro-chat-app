@@ -2,6 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
+import { useRouter } from "next/navigation";
+
+
+
 import {
   Search,
   UserCircle,
@@ -11,6 +15,7 @@ import {
   X,
   RefreshCw,
   Mail,
+  LogOut,
 } from "lucide-react";
 
 import { socket } from "@/lib/socket";
@@ -46,6 +51,11 @@ export default function ChatSidebar({
 
   const [chatSuccess, setChatSuccess] = useState("");
 
+
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+const [loggingOut, setLoggingOut] = useState(false);
+
+const router = useRouter();
   // =====================================================
   // LOAD CONVERSATIONS
   // =====================================================
@@ -449,6 +459,38 @@ export default function ChatSidebar({
 
     setChatSuccess("");
   };
+
+  //======================================================
+  // Logout
+  //======================================================
+ const handleLogout = async () => {
+  try {
+    setLoggingOut(true);
+
+    const response = await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "include",
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || "Logout failed");
+    }
+
+    // Socket agar available hai to disconnect karo
+    socket?.disconnect();
+
+    // Login page par jao aur history replace karo
+    router.replace("/login");
+    router.refresh();
+  } catch (error) {
+    console.error("Logout error:", error);
+  } finally {
+    setLoggingOut(false);
+    setLogoutModalOpen(false);
+  }
+};
   return (
     <>
       <aside className="flex w-[340px] shrink-0 flex-col border-r border-gray-200 bg-white">
@@ -463,26 +505,40 @@ export default function ChatSidebar({
             </div>
 
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={loadConversations}
-                disabled={loading}
-                className="grid h-9 w-9 place-items-center rounded-lg text-gray-500 transition hover:bg-gray-100"
-              >
-                <RefreshCw
-                  size={17}
-                  className={`${loading ? "animate-spin" : ""}`}
-                />
-              </button>
+  {/* REFRESH */}
+  <button
+    type="button"
+    onClick={loadConversations}
+    disabled={loading}
+    className="grid h-9 w-9 place-items-center rounded-lg text-gray-500 transition hover:bg-gray-100"
+    title="Refresh"
+  >
+    <RefreshCw
+      size={17}
+      className={`${loading ? "animate-spin" : ""}`}
+    />
+  </button>
 
-              <button
-                type="button"
-                onClick={openNewChat}
-                className="grid h-9 w-9 place-items-center rounded-lg bg-[#0E1320] text-white transition hover:bg-[#1b2435]"
-              >
-                <Plus size={18} />
-              </button>
-            </div>
+  {/* NEW CHAT */}
+  <button
+    type="button"
+    onClick={openNewChat}
+    className="grid h-9 w-9 place-items-center rounded-lg bg-[#0E1320] text-white transition hover:bg-[#1b2435]"
+    title="New conversation"
+  >
+    <Plus size={18} />
+  </button>
+
+  {/* LOGOUT */}
+  <button
+    type="button"
+    onClick={() => setLogoutModalOpen(true)}
+    className="grid h-9 w-9 place-items-center rounded-lg text-gray-500 transition hover:bg-red-50 hover:text-red-600"
+    title="Logout"
+  >
+    <LogOut size={17} />
+  </button>
+</div>
           </div>
 
           {/* SEARCH */}
@@ -743,6 +799,85 @@ ${active ? "bg-gray-100" : "hover:bg-gray-50"}
           </div>
         </div>
       )}
+
+      {/* LOGOUT CONFIRMATION MODAL */}
+
+{logoutModalOpen && (
+  <div
+    className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm"
+    onMouseDown={(e) => {
+      if (e.target === e.currentTarget && !loggingOut) {
+        setLogoutModalOpen(false);
+      }
+    }}
+  >
+    <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl">
+      {/* HEADER */}
+
+      <div className="flex items-center gap-3 border-b border-gray-200 px-5 py-4">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-red-50">
+          <LogOut
+            size={19}
+            className="text-red-600"
+          />
+        </div>
+
+        <div>
+          <h2 className="font-semibold text-gray-900">
+            Logout
+          </h2>
+
+          <p className="mt-1 text-xs text-gray-500">
+            Sign out of your account
+          </p>
+        </div>
+      </div>
+
+      {/* BODY */}
+
+      <div className="p-5">
+        <p className="text-sm leading-6 text-gray-600">
+          Are you sure you want to logout from your
+          account?
+        </p>
+
+        {/* BUTTONS */}
+
+        <div className="mt-6 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => setLogoutModalOpen(false)}
+            disabled={loggingOut}
+            className="rounded-lg border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-700 transition hover:bg-gray-50 disabled:opacity-50"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleLogout}
+            disabled={loggingOut}
+            className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loggingOut && (
+              <RefreshCw
+                size={15}
+                className="animate-spin"
+              />
+            )}
+
+            {loggingOut
+              ? "Logging out..."
+              : "Logout"}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+
+
     </>
   );
 }

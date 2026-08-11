@@ -1,16 +1,23 @@
-import { NextResponse } from "next/server";
-import { getCurrentUserId } from "@/lib/auth";
+import { NextRequest, NextResponse } from "next/server";
 
-import {connectDB} from "@/lib/mongodb";
+import { getCurrentUserId } from "@/lib/auth";
+import { connectDB } from "@/lib/mongodb";
 import User from "@/models/User";
 
-export async function GET() {
+export interface DecodedToken {
+  UserId: string;
+  email: string;
+  name: string;
+}
+
+export async function GET(request: NextRequest) {
   try {
     await connectDB();
 
-    const userId = await getCurrentUserId();
+    // Get decoded token from middleware
+    const currentuser = getCurrentUserId(request);
 
-    if (!userId) {
+    if (!currentuser) {
       return NextResponse.json(
         {
           success: false,
@@ -20,9 +27,12 @@ export async function GET() {
       );
     }
 
-    const user = await User.findById(userId).select(
-      "_id name email avatar status lastSeen"
-    );
+    // console.log("Decoded Token:", decoded);
+
+    // Find logged-in user
+    const user = await User.findById(currentuser.userId)
+      .select("_id name email avatar status lastSeen")
+      .lean();
 
     if (!user) {
       return NextResponse.json(
@@ -34,12 +44,15 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      data: user,
-    });
+    return NextResponse.json(
+      {
+        success: true,
+        data: user,
+      },
+      { status: 200 }
+    );
   } catch (error: any) {
-    console.error("ME API ERROR:", error);
+    // console.error("ME API ERROR:", error);
 
     return NextResponse.json(
       {

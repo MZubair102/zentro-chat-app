@@ -1,21 +1,20 @@
 
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server";
 
 import {connectDB} from "@/lib/mongodb";
 import User from "@/models/User";
 
 import { getCurrentUserId } from "@/lib/auth";
 
-export async function POST() {
+export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const userId =
-      await getCurrentUserId();
+    const currentuser = getCurrentUserId(request);
 
-    if (userId) {
+    if (currentuser) {
       await User.findByIdAndUpdate(
-        userId,
+        currentuser.userId,
         {
           status: "offline",
           lastSeen: new Date(),

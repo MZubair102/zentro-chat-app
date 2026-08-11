@@ -40,6 +40,13 @@ export default function ChatWindow({
   const shouldScrollRef = useRef(true);
 
   // =====================================================
+  // FILE UPLOAD
+  // =====================================================
+
+  const [uploadingFile, setUploadingFile] =
+    useState(false);
+
+  // =====================================================
   // DELETE MENU
   // =====================================================
 
@@ -86,7 +93,7 @@ export default function ChatWindow({
     );
 
   // =====================================================
-  // UPDATE STATUS WHEN CONVERSATION CHANGES
+  // UPDATE STATUS
   // =====================================================
 
   useEffect(() => {
@@ -106,7 +113,7 @@ export default function ChatWindow({
   ]);
 
   // =====================================================
-  // CLOSE DELETE MENU WHEN CLICKING OUTSIDE
+  // CLOSE DELETE MENU
   // =====================================================
 
   useEffect(() => {
@@ -133,7 +140,7 @@ export default function ChatWindow({
   }, [deleteMenuMessage]);
 
   // =====================================================
-  // AUTO SCROLL
+  // SCROLL
   // =====================================================
 
   const scrollToBottom = (
@@ -212,7 +219,7 @@ export default function ChatWindow({
     loadMessages();
 
     // ===================================================
-    // JOIN CONVERSATION
+    // JOIN
     // ===================================================
 
     socket.emit(
@@ -401,10 +408,6 @@ export default function ChatWindow({
         return;
       }
 
-      // -----------------------------------------------
-      // DELETE FOR EVERYONE
-      // -----------------------------------------------
-
       if (
         deleteType ===
         "everyone"
@@ -430,10 +433,6 @@ export default function ChatWindow({
 
         return;
       }
-
-      // -----------------------------------------------
-      // DELETE FOR ME
-      // -----------------------------------------------
 
       if (
         deleteType === "me"
@@ -576,7 +575,7 @@ export default function ChatWindow({
   ]);
 
   // =====================================================
-  // AUTO SCROLL WHEN MESSAGES CHANGE
+  // AUTO SCROLL
   // =====================================================
 
   useEffect(() => {
@@ -596,7 +595,7 @@ export default function ChatWindow({
   }, [messages.length]);
 
   // =====================================================
-  // MARK RECEIVED MESSAGES AS SEEN
+  // MARK MESSAGES SEEN
   // =====================================================
 
   useEffect(() => {
@@ -614,7 +613,6 @@ export default function ChatWindow({
     const unreadMessages =
       messages.filter(
         (message) => {
-          // Deleted messages ko seen nahi karna
           if (
             message.deletedForEveryone
           ) {
@@ -628,7 +626,6 @@ export default function ChatWindow({
                 "",
             );
 
-          // Apne messages ko seen nahi karna
           if (
             senderId ===
             String(currentUserId)
@@ -657,12 +654,6 @@ export default function ChatWindow({
           return !alreadySeen;
         },
       );
-
-    if (
-      !unreadMessages.length
-    ) {
-      return;
-    }
 
     unreadMessages.forEach(
       (message) => {
@@ -744,10 +735,6 @@ export default function ChatWindow({
         return;
       }
 
-      // =================================================
-      // DELETE FOR ME
-      // =================================================
-
       if (
         data.deleteType === "me"
       ) {
@@ -776,10 +763,6 @@ export default function ChatWindow({
           },
         );
       }
-
-      // =================================================
-      // DELETE FOR EVERYONE
-      // =================================================
 
       if (
         data.deleteType ===
@@ -824,10 +807,6 @@ export default function ChatWindow({
           },
         );
       }
-
-      // =================================================
-      // CLOSE MENU
-      // =================================================
 
       setDeleteMenuMessage(
         null,
@@ -881,7 +860,7 @@ export default function ChatWindow({
   };
 
   // =====================================================
-  // SEND MESSAGE
+  // SEND TEXT MESSAGE
   // =====================================================
 
   const sendMessage = async (
@@ -910,6 +889,7 @@ export default function ChatWindow({
           body: JSON.stringify({
             text: cleanText,
             messageType: "text",
+            attachments: [],
           }),
         },
       );
@@ -932,7 +912,6 @@ export default function ChatWindow({
       const message =
         data.data;
 
-      // Local message
       setMessages((prev) => {
         const exists =
           prev.some(
@@ -954,13 +933,11 @@ export default function ChatWindow({
       shouldScrollRef.current =
         true;
 
-      // Socket
       socket.emit(
         "send-message",
         {
           conversationId:
             conversation._id,
-
           message,
         },
       );
@@ -975,6 +952,107 @@ export default function ChatWindow({
       );
     }
   };
+
+  // =====================================================
+  // FILE TYPE
+  // =====================================================
+
+  const getMessageType = (
+    file: File,
+  ): "image" | "file" => {
+    if (
+      file.type.startsWith(
+        "image/",
+      )
+    ) {
+      return "image";
+    }
+
+    return "file";
+  };
+
+  // =====================================================
+  // HANDLE FILE SELECT
+  // =====================================================
+
+ const handleFileSelect = async (file: File) => {
+  try {
+    if (!file) {
+      return;
+    }
+
+    const formData = new FormData();
+
+    formData.append("file", file);
+    formData.append(
+      "messageType",
+      file.type.startsWith("image/")
+        ? "image"
+        : file.type.startsWith("video/")
+        ? "video"
+        : "file"
+    );
+
+    const res = await fetch(
+      `/api/messages/${conversation._id}`,
+      {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      }
+    );
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      alert(
+        data.message ||
+          "Failed to upload file."
+      );
+
+      return;
+    }
+
+    const message = data.data;
+
+    // Add immediately to current chat
+    setMessages((prev) => {
+      const exists = prev.some(
+        (item) =>
+          String(item._id) ===
+          String(message._id)
+      );
+
+      if (exists) {
+        return prev;
+      }
+
+      return [
+        ...prev,
+        message,
+      ];
+    });
+
+    shouldScrollRef.current = true;
+
+    // Send through socket
+    socket.emit("send-message", {
+      conversationId:
+        conversation._id,
+
+      message,
+    });
+  } catch (error) {
+    console.error(
+      "File upload error:",
+      error
+    );
+
+    alert(
+      "Failed to upload file."
+    );
+  }
+};
 
   // =====================================================
   // CONVERSATION NAME
@@ -1296,10 +1374,6 @@ export default function ChatWindow({
                   >
                     <div className="relative max-w-[70%]">
 
-                      {/* =================================
-                          DELETE BUTTON
-                      ================================= */}
-
                       {!isDeleted && (
                         <button
                           type="button"
@@ -1320,10 +1394,6 @@ export default function ChatWindow({
                           />
                         </button>
                       )}
-
-                      {/* =================================
-                          DELETED MESSAGE
-                      ================================= */}
 
                       {isDeleted ? (
                         <div
@@ -1362,16 +1432,29 @@ export default function ChatWindow({
           INPUT
       ================================================= */}
 
-      <div className="shrink-0">
+      <div className="relative shrink-0">
+
+        {uploadingFile && (
+          <div className="absolute bottom-full left-0 right-0 border-t border-gray-200 bg-white px-4 py-2">
+            <p className="text-xs text-gray-500">
+              Uploading file...
+            </p>
+          </div>
+        )}
+
         <MessageInput
           conversationId={
-            conversation._id
+            String(conversation._id)
           }
           currentUserId={
-            currentUserId
+            String(currentUserId)
           }
           onSend={sendMessage}
+          onFileSelect={
+            handleFileSelect
+          }
         />
+
       </div>
 
       {/* =================================================
@@ -1393,8 +1476,6 @@ export default function ChatWindow({
                 deleteMenuPosition.left,
             }}
           >
-
-            {/* HEADER */}
 
             <div className="flex items-center justify-between border-b border-gray-100 px-3 py-2">
 
@@ -1486,6 +1567,7 @@ export default function ChatWindow({
 
           </div>
         )}
+
     </div>
   );
 }

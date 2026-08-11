@@ -21,7 +21,7 @@ import "@/models/Message";
 
 import "@/models/User";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     await connectDB();
 
@@ -30,9 +30,9 @@ export async function GET() {
     void Message;
     void User;
 
-    const userId = await getCurrentUserId();
+    const currentuser = getCurrentUserId(request);
 
-    if (!userId) {
+    if (!currentuser) {
       return NextResponse.json(
         {
           success: false,
@@ -43,27 +43,26 @@ export async function GET() {
         }
       );
     }
-
-    const conversations = await Conversation.find({
-      participants: userId,
-    })
-      .populate(
-        "participants",
-        "name email avatar status lastSeen"
-      )
-      .populate({
-        path: "lastMessage",
-        select:
-          "sender text messageType attachments seenBy createdAt",
-        populate: {
-          path: "sender",
-          select: "name email avatar",
-        },
-      })
-      .sort({
-        updatedAt: -1,
-      })
-      .lean();
+const conversations = await Conversation.find({
+  participants: currentuser.userId,
+})
+  .populate(
+    "participants",
+    "name email avatar status lastSeen"
+  )
+  .populate({
+    path: "lastMessage",
+    select:
+      "sender text messageType attachments seenBy createdAt",
+    populate: {
+      path: "sender",
+      select: "name email avatar",
+    },
+  })
+  .sort({
+    updatedAt: -1,
+  })
+  .lean();
 
     return NextResponse.json({
       success: true,
@@ -93,7 +92,7 @@ export async function GET() {
 // Create private conversation using user's EMAIL
 // ======================================================
 
-export async function POST(req: NextRequest) {
+export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
@@ -101,7 +100,7 @@ export async function POST(req: NextRequest) {
     // Get logged-in user from JWT cookie
     // --------------------------------------------
 
-    const currentUserId = await getCurrentUserId();
+    const currentUserId = getCurrentUserId(request);
 
     if (!currentUserId) {
       return NextResponse.json(
@@ -117,7 +116,7 @@ export async function POST(req: NextRequest) {
     // Read request body
     // --------------------------------------------
 
-    const body = await req.json();
+    const body = await request.json();
 
     const email =
       typeof body.email === "string"

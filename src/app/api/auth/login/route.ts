@@ -105,6 +105,7 @@ export async function POST(req: NextRequest) {
         avatar: user.avatar,
         status: user.status,
       },
+      token: token,
     });
 
     // ==========================
