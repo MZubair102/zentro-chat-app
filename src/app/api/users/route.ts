@@ -16,8 +16,7 @@ export async function GET(
   try {
     await connectDB();
 
-    const userId =
-      await getCurrentUserId();
+    const userId = getCurrentUserId(req);
 
     if (!userId) {
       return NextResponse.json(
